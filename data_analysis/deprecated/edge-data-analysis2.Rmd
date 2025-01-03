@@ -1,0 +1,242 @@
+---
+title: "Edge Comparison Analysis: Trials 2-6"
+author: "Brandon Titensor"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+```
+
+
+
+## Data Loading and Preprocessing
+
+```{r data_loading}
+# Function to load and process a single sample
+load_sample_data <- function(sample_number) {
+  # Format sample number with leading zeros
+  sample_str <- sprintf("%02d", sample_number)
+  
+  # Construct file paths
+  particles_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
+  summary_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
+  
+  # Load particle data
+  particles_data <- read.csv(particles_path)
+  particles_data$Sample <- sample_number
+  particles_data$Diameter <- sqrt(particles_data$Area/pi) * 2
+  
+  # Load summary data
+  summary_data <- read.csv(summary_path)
+  summary_data <- summary_data[,-c(8:11)]
+  names(summary_data) <- make.names(names(summary_data))
+  summary_data$Count <- as.numeric(gsub("[^0-9.]", "", summary_data$Count))
+  summary_data$width <- as.numeric(gsub("[^0-9.]", "", summary_data$width))
+  summary_data <- summary_data %>% drop_na()
+  summary_data$Sample <- sample_number
+  
+  list(particles = particles_data, summary = summary_data)
+}
+
+# Load data for samples 6-30 (Trials 2-6, 5 samples each)
+all_data <- map(6:35, load_sample_data)
+
+# Combine all particle data
+all_particles_data <- bind_rows(map(all_data, "particles"))
+
+# Combine all summary data
+all_summary_data <- bind_rows(map(all_data, "summary"))
+
+# Assign trials to samples (5 samples per trial)
+all_particles_data$Trial <- ceiling((all_particles_data$Sample - 5) / 5) + 1
+all_summary_data$Trial <- ceiling((all_summary_data$Sample - 5) / 5) + 1
+
+# Calculate total width for each trial
+total_width_by_trial <- all_summary_data %>%
+  group_by(Trial) %>%
+  summarise(Total_Width = sum(width))
+
+# Calculate the normalization factor
+max_width <- max(total_width_by_trial$Total_Width)
+normalization_factors <- max_width / total_width_by_trial$Total_Width
+
+percent_area_covered <- read_csv("~/Desktop/College/Research/Dust_Contamination/R/percent_area_covered.csv")
+```
+
+## Particle Size Distribution Analysis
+
+```{r particle_distribution}
+# Define diameter thresholds
+diameter_thresholds <- seq(1, max(all_particles_data$Diameter), by = 1)
+
+# Function to get normalized counts for a given dataset
+get_normalized_counts <- function(data, norm_factor) {
+  sapply(diameter_thresholds, function(x) sum(data$Diameter > x)) * norm_factor
+}
+
+# Calculate normalized counts for each trial
+counts_by_trial <- all_particles_data %>%
+  group_by(Trial) %>%
+  group_modify(~ tibble(
+    Diameter = diameter_thresholds,
+    Count = get_normalized_counts(.x, normalization_factors[.y$Trial - 1])
+  ))
+
+# Plot the distribution
+ggplot(counts_by_trial, aes(x = log10(Diameter)^2, y = Count, color = factor(Trial))) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Normalized Count of Particles (log scale)",
+       title = "Distribution of Edge Particle Diameters by Trial") +
+  theme_minimal() +
+    scale_color_manual(values = c("2" = "red", "3" = "pink", "4" = "blue", "5" = "cyan", "6" = "forestgreen", "7" = "lightgreen")) +
+    theme(legend.position = "bottom", 
+          legend.title = element_text(size = 10),
+          legend.text = element_text(size = 8))
+```
+
+## Line of Best Fit and Statistics
+
+```{r best_fit}
+# Function to calculate best fit line and statistics
+
+
+best_fit_lines <- counts_by_trial %>%
+  group_by(Trial) %>%
+  filter(Count > 0) %>% 
+  summarise(slope = coef(lm(log10(Count) ~ log10(Diameter)^2))[2],
+    intercept = coef(lm(log10(Count) ~ log10(Diameter)^2))[1]
+  )
+
+# Calculate L values for each trial
+best_fit_lines <- best_fit_lines %>%
+  mutate(
+    L = 10^(sqrt(abs(intercept / slope)))
+  )
+
+
+# Add best fit lines to the plot
+ggplot() +
+  geom_line(data = counts_by_trial, 
+            aes(x = log10(Diameter)^2, y = Count, color = factor(Trial))) +
+  # Add best fit lines for each trial
+  geom_abline(data = best_fit_lines, 
+              aes(slope = slope, intercept = intercept, color = factor(Trial)),
+              linetype = "dotted") +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Normalized Count of Particles (log scale)",
+       title = "Distribution of Edge Particle Diameters by Trial with Best Fit Lines") +
+  theme_minimal() +
+    scale_color_manual(values = c("2" = "red", "3" = "pink", "4" = "blue", "5" = "cyan", "6" = "forestgreen", "7" = "lightgreen")) +
+    theme(legend.position = "bottom", 
+          legend.title = element_text(size = 10),
+          legend.text = element_text(size = 8))
+
+comparison_table <- best_fit_lines %>%
+  left_join(counts_by_trial %>% 
+              select(Trial) %>% 
+              distinct(), 
+            by = "Trial") %>%
+  select(Trial, L, slope) %>%
+  rename(PCL_bestfit = L, Slope_bestfit = slope)
+
+
+kable(comparison_table, 
+      caption = "Comparison of PCL values: Best Fit vs. Average",
+      col.names = c("Trial", "PCL (Best Fit)", "Slope (Best Fit)"))
+```
+
+```{r}
+EdgeModel <- function(PAC, PCL, n, slope, answercounter, titleCell, dn, max_width) {
+ 
+  
+  # Main calculations
+  x <- 1:nrow(dn)  # Use the number of rows in dn for the diameter range
+
+  
+  results <- list()
+  
+  for (ii in 1:answercounter) {
+    pcl <- PCL[ii]
+    Slope <- slope[ii]
+    
+    Count <- (4/pi * PAC[ii] / x) * max_width
+    Count_cumul <- rev(cumsum(rev(Count)))
+    
+    results[[ii]] <- list(
+      pcl = pcl,
+      Slope = Slope,
+      Count = Count,
+      Count_cumul = Count_cumul
+    )
+  }
+  
+  return(results)
+}
+
+# Example usage (you'll need to provide actual data)
+PAC <- percent_area_covered$Percent_Area_Covered
+PCL <- percent_area_covered$PCL
+n <- rep(46, 6)  # example values
+slope <- percent_area_covered$slope
+answercounter <- 6
+titleCell <- c("Sample 2", "Sample 3", "Sample 4","Sample 5", "Sample 6", "Sample 7")
+# Reshape counts_by_trial
+counts_wide <- counts_by_trial %>%
+  pivot_wider(names_from = Trial, 
+              values_from = Count, 
+              names_prefix = "Trial_")
+counts_wide <- counts_wide %>% 
+  select(-c(1))
+
+dn <- counts_wide  # example values
+
+edge_model_results <- EdgeModel(PAC, PCL, n, slope, answercounter, titleCell, dn, max_width)
+```
+
+
+```{r best_fit_with_theoretical, fig.width=10, fig.height=6}
+
+
+# Prepare data for theoretical lines
+theoretical_data <- map_df(seq_along(edge_model_results), ~tibble(
+  Diameter = 1:length(edge_model_results[[.x]]$Count_cumul),
+  Count = edge_model_results[[.x]]$Count_cumul,
+  Trial = .x + 1  # Adding 1 because trials start at 2
+))
+
+# Add best fit lines and theoretical lines to the plot
+ggplot() +
+  # Observed data
+  geom_line(data = counts_by_trial, 
+            aes(x = log10(Diameter)^2, y = Count, color = factor(Trial))) +
+  # Best fit lines
+  geom_abline(data = best_fit_lines, 
+              aes(slope = slope, intercept = intercept, color = factor(Trial)),
+              linetype = "dotted") +
+  # Theoretical lines
+  geom_line(data = theoretical_data,
+            aes(x = log10(Diameter)^2, y = Count, color = factor(Trial)),
+            linetype = "dashed") +
+  scale_y_log10() +
+  labs(x = "Diameter (microns)", 
+       y = "Cumulative Count of Particles",
+       title = "Distribution of Edge Particle Diameters by Trial",
+       subtitle = "Observed Data, Best Fit Lines, and Theoretical Model") +
+  theme_minimal() +
+  scale_color_manual(values = c("2" = "red", "3" = "pink", "4" = "blue", 
+                                "5" = "cyan", "6" = "forestgreen", "7" = "lightgreen"),
+                     name = "Trial") +
+  theme(legend.position = "bottom", 
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 8))
+
+
+```
+

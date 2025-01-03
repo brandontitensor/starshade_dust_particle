@@ -1,0 +1,741 @@
+---
+title: "Updated Analysis of Surface After Particle Data with Cleaning Methods"
+author: "Data Analyst"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(reshape2)
+library(ggplot2)
+library(FSA)
+library(knitr)
+library(rstatix)
+library(gridExtra)
+library(cluster)
+library(factoextra)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(purrr)
+library(data.table)
+```
+
+# 1. Data Loading and Preprocessing
+
+```{r data_loading}
+# Function to load and process particle data for a single sample
+load_particle_data <- function(trial_number, sample_number) {
+  tryCatch({
+    # Construct file path
+    particle_path <- file.path(
+      "~", "Desktop", "College", "Research", "Dust_Contamination", "Trials", "Data", "Surfaces",
+      sprintf("AftTr%dSa%dSurf", trial_number, sample_number),
+      sprintf("Particles_AftTr%dSa%dSurf.csv", trial_number, sample_number)
+    )
+    
+    # Load particle data
+    particle_data <- read_csv(particle_path)
+    
+    # Preprocess data
+    particle_data <- particle_data[, 2:(ncol(particle_data)-2)]  # Remove columns 1, 15, 16
+    particle_data$Diameter <- sqrt(particle_data$Area / pi) * 2
+    particle_data$Sample <- sample_number
+    particle_data$Trial <- trial_number
+    
+    return(particle_data)
+  }, error = function(e) {
+    message(sprintf("Error loading particle data for Trial %d, Sample %d: %s", trial_number, sample_number, e$message))
+    return(NULL)
+  })
+}
+
+# Function to load and process summary data for a single sample
+load_summary_data <- function(trial_number, sample_number) {
+  tryCatch({
+    # Construct file path
+    summary_path <- file.path(
+      "~", "Desktop", "College", "Research", "Dust_Contamination", "Trials", "Data", "Surfaces",
+      sprintf("AftTr%dSa%dSurf", trial_number, sample_number),
+      sprintf("Summary_AftTr%dSa%dSurf.csv", trial_number, sample_number)
+    )
+    
+    # Load summary data
+    summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
+    
+    # Clean column names and preprocess
+    names(summary_data) <- gsub(" ", "_", names(summary_data))
+    summary_data <- summary_data %>% 
+      drop_na() %>%
+      mutate(
+        Sample = sample_number,
+        Trial = trial_number,
+        Slice_Number = as.integer(substr(Slice, nchar(Slice)-6, nchar(Slice)-4))
+      )
+    
+    return(summary_data)
+  }, error = function(e) {
+    message(sprintf("Error loading summary data for Trial %d, Sample %d: %s", trial_number, sample_number, e$message))
+    return(NULL)
+  })
+}
+
+# Create a list of all combinations of trials and samples
+trial_sample_combinations <- expand.grid(trial = 2:7, sample = 1:5)
+
+# Load data for trials 2-6 and 5 samples in each trial
+all_particle_data <- pmap(trial_sample_combinations, ~load_particle_data(.x, .y))
+all_summary_data <- pmap(trial_sample_combinations, ~load_summary_data(.x, .y))
+
+# Remove NULL entries and combine all data into single data frames
+combined_particle_data <- bind_rows(all_particle_data)
+combined_summary_data <- bind_rows(all_summary_data)
+
+# Add cleaning method information
+add_cleaning_method <- function(data) {
+  data %>%
+    mutate(Cleaning_Method = case_when(
+      Trial %in% c(2, 3) ~ "IPA rinse",
+      Trial %in% c(4, 5) ~ "Drag and wipe",
+      Trial %in% c(6, 7) ~ "First contact",
+      TRUE ~ NA_character_
+    ))
+}
+
+combined_particle_data <- add_cleaning_method(combined_particle_data)
+combined_summary_data <- add_cleaning_method(combined_summary_data)
+
+# Calculate total imaged area for each trial
+image_size <- 600 * 450  # microns^2
+trial_areas <- combined_summary_data %>%
+  group_by(Trial, Cleaning_Method) %>%
+  summarise(
+    Total_Images = n(),
+    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
+    .groups = "drop"
+  )
+
+# Display the trial areas
+kable(trial_areas, caption = "Trial Areas")
+
+# Calculate normalization factors
+normalization_factors <- trial_areas %>%
+  mutate(Normalization_Factor = 0.1 / Total_Area)
+
+# Display the normalization factors
+kable(select(normalization_factors, Trial, Cleaning_Method, Normalization_Factor),
+      caption = "Normalization Factors by Trial and Cleaning Method")
+```
+
+
+```{r data_loading2}
+
+
+# Convert dataframes to data.tables if they aren't already
+setDT(combined_particle_data)
+setDT(combined_summary_data)
+
+# Prepare summary data
+combined_summary_data <- combined_summary_data[order(Trial, Sample, Slice_Number)]
+combined_summary_data[, `:=`(
+  lower_bound = c(0, head(cumsum(Count), -1)),
+  upper_bound = cumsum(Count) - 1
+), by = .(Trial, Sample)]
+
+# Function to assign slice numbers
+assign_slice_numbers <- function(particle_counts, summary) {
+  findInterval(particle_counts, summary$upper_bound + 1)
+}
+
+# Process the data
+combined_particle_data[, row_id := seq_len(.N)]
+combined_particle_data[, particle_count := seq_len(.N) - 1, by = .(Trial, Sample)]
+
+# Process in chunks to avoid memory issues
+chunk_size <- 1000000  # Adjust based on available memory
+for (i in seq(1, nrow(combined_particle_data), by = chunk_size)) {
+  end_i <- min(i + chunk_size - 1, nrow(combined_particle_data))
+  chunk <- combined_particle_data[i:end_i]
+  
+  chunk[, Slice_Number := {
+    summary_subset <- combined_summary_data[Trial == .BY$Trial & Sample == .BY$Sample]
+    assign_slice_numbers(particle_count, summary_subset)
+  }, by = .(Trial, Sample)]
+  
+  combined_particle_data[i:end_i, Slice_Number := chunk$Slice_Number]
+}
+
+# Clean up
+combined_particle_data[, c("row_id", "particle_count") := NULL]
+combined_summary_data[, c("lower_bound", "upper_bound") := NULL]
+
+# Verification step
+verification <- combined_particle_data[, .(Particle_Count = .N), by = .(Trial, Sample, Slice_Number)]
+verification <- merge(
+  verification,
+  combined_summary_data[, .(Trial, Sample, Slice_Number, Summary_Count = Count)],
+  by = c("Trial", "Sample", "Slice_Number"),
+  all = TRUE
+)
+verification[, Difference := Particle_Count - Summary_Count]
+
+print("\nDiscrepancies between particle counts and summary counts:")
+print(verification[Difference != 0])
+
+# Debugging output
+print(sprintf("\nTotal particles: %d", nrow(combined_particle_data)))
+print(sprintf("Total expected particles: %d", sum(combined_summary_data$Count)))
+```
+
+# 2. Particle Characteristic Analysis
+
+```{r particle_characteristics}
+# Function to normalize data
+normalize <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+
+# Prepare data for clustering
+particle_features <- combined_particle_data %>%
+  select(Trial, Sample, Area, Diameter, Circ.) %>%
+  mutate(across(c(Area, Diameter, Circ.), normalize))
+
+# Perform k-means clustering
+set.seed(123)  # for reproducibility
+n_clusters <- 10  # adjust as needed
+kmeans_result <- kmeans(particle_features %>% select(Area, Diameter, Circ.), centers = n_clusters)
+
+# Add cluster assignments to the data
+particle_features$Cluster <- kmeans_result$cluster
+
+# Function to find similar particles across trials
+find_similar_particles <- function(data, threshold = 0.8) {
+  data %>%
+    group_by(Cluster) %>%
+    summarize(
+      Trial = n_distinct(Trial),
+      Sample = n_distinct(Sample),
+      Prevalence = n_distinct(Trial) / max(Trial),
+      Area = mean(Area),
+      Diameter = mean(Diameter),
+      Circ.= mean(Circ.),
+      Count = n()
+    ) %>%
+    filter(Prevalence >= threshold) %>%
+    arrange(desc(Prevalence), desc(Count))
+}
+
+# Find similar particles
+similar_particles <- find_similar_particles(particle_features)
+
+# Print results
+print(kable(similar_particles, caption = "Similar Particles Across Trials"))
+
+# # Visualize clusters
+# cluster_plot <- fviz_cluster(kmeans_result, data = particle_features %>% select(Area, Diameter, Circ.),
+#                              geom = "point",
+#                              ellipse.type = "convex",
+#                              ggtheme = theme_minimal())
+# 
+# print(cluster_plot)
+
+# Analyze distribution of similar particles across trials
+if (nrow(similar_particles) > 0) {
+  similar_cluster <- similar_particles$Cluster[1]
+  trial_distribution <- particle_features %>%
+    filter(Cluster == similar_cluster) %>%
+    group_by(Trial) %>%
+    summarize(Count = n()) %>%
+    mutate(Percentage = Count / sum(Count) * 100)
+  
+  print(kable(trial_distribution, caption = "Distribution of Most Prevalent Similar Particles Across Trials"))
+} else {
+  print("No clusters meeting the similarity threshold were found.")
+}
+```
+
+# 3. Slice-by-Slice Analysis
+
+```{r slice_analysis, fig.width=10, fig.height=8}
+# Create separate graphs for each Sample
+sample_plots <- combined_summary_data %>%
+  split(.$Sample) %>%
+  map(function(sample_data) {
+    similar_particles_sample <- similar_particles %>%
+      left_join(combined_summary_data %>% select(Trial, Sample, Slice_Number, Total_Area),
+                by = c("Trial", "Sample"))
+    
+    ggplot(sample_data, aes(x = Slice_Number, y = Total_Area, color = factor(Trial))) +
+      geom_line() +
+      geom_point(data = similar_particles_sample, 
+                 aes(x = Slice_Number, y = Total_Area, shape = "Similar Particle"),
+                 color = "black", size = 3) +
+      labs(title = paste("Sample", unique(sample_data$Sample)),
+           x = "Slice Number",
+           y = "Total Area",
+           color = "Trial",
+           shape = "Particle Type") +
+      theme_minimal() +
+      theme(legend.position = "bottom")
+  })
+
+# Arrange the plots in a grid
+do.call(grid.arrange, c(sample_plots, ncol = 2))
+
+# Identification of Significant Slices
+# Calculate mean and standard deviation of Total_Area for each Trial and Slice_Number
+slice_stats <- combined_summary_data %>%
+  group_by(Trial, Slice_Number) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    .groups = "drop"
+  )
+
+# Identify slices with significantly large total areas
+significant_slices <- slice_stats %>%
+  group_by(Trial) %>%
+  mutate(
+    Trial_Mean = mean(Mean_Area),
+    Trial_SD = sd(Mean_Area),
+    Is_Significant = Mean_Area > (Trial_Mean + 2 * Trial_SD)
+  ) %>%
+  filter(Is_Significant) %>%
+  arrange(Trial, desc(Mean_Area))
+
+# Create a table of significant slices
+kable(significant_slices %>% 
+        select(Trial, Slice_Number, Mean_Area, SD_Area),
+      caption = "Slices with Significantly Large Total Areas",
+      col.names = c("Trial", "Slice Number", "Mean Total Area", "SD Total Area"),
+      digits = 2)
+
+# Analysis of Common Significant Slices
+# Analyze for similarities across trials
+common_significant_slices <- significant_slices %>%
+  group_by(Slice_Number) %>%
+  summarise(
+    Trials = paste(Trial, collapse = ", "),
+    Count = n(),
+    .groups = "drop"
+  ) %>%
+  filter(Count > 1) %>%
+  arrange(desc(Count))
+
+# Print common significant slices
+if (nrow(common_significant_slices) > 0) {
+  print(kable(common_significant_slices,
+              col.names = c("Slice Number", "Trials", "Number of Occurrences"),
+              caption = "Common Significant Slices Across Trials"))
+} else {
+  cat("No common significant slices found across trials.\n")
+}
+```
+
+# 4. Implementing Sample Alignment with Correct Imaging Pattern
+
+```{r sample_alignment_update, fig.width=12, fig.height=10}
+# Function to assign correct grid coordinates based on Slice_Number
+assign_correct_grid_coordinates <- function(slice_number, width = 63, height = 8) {
+  row <- (slice_number - 1) %/% width
+  col <- (slice_number - 1) %% width
+  
+  if (row %% 2 == 1) {
+    col <- width - 1 - col  # Reverse column order for odd rows
+  }
+  
+  return(list(x = col + 1, y = row + 1))
+}
+
+# Add correct grid coordinates to the combined_summary_data
+combined_summary_data <- combined_summary_data %>%
+  mutate(Grid_Coordinates = map(Slice_Number, assign_correct_grid_coordinates)) %>%
+  mutate(
+    X_Coordinate = map_dbl(Grid_Coordinates, "x"),
+    Y_Coordinate = map_dbl(Grid_Coordinates, "y")
+  )
+
+# Create an updated heatmap function
+create_updated_heatmap <- function(trial_data) {
+  ggplot(trial_data, aes(x = X_Coordinate, y = Y_Coordinate, fill = Total_Area)) +
+    geom_tile() +
+    scale_fill_gradient(low = "white", high = "red") +
+    scale_x_continuous(breaks = seq(1, 63, by = 10)) +
+    scale_y_reverse(breaks = 1:8) +
+    labs(title = paste("Trial", unique(trial_data$Trial), "-", unique(trial_data$Cleaning_Method)),
+         x = "X Coordinate", y = "Y Coordinate", fill = "Total Area") +
+    theme_minimal() +
+    theme(aspect.ratio = 1/8)  # Adjust aspect ratio to match 63:8
+}
+
+# Create and display updated heatmaps
+updated_heatmaps <- combined_summary_data %>%
+  group_by(Trial) %>%
+  group_map(~ create_updated_heatmap(.x))
+
+# Display heatmaps
+do.call(grid.arrange, c(updated_heatmaps, ncol = 1))
+
+# Analyze consistency of particle distribution across trials
+grid_consistency <- combined_summary_data %>%
+  group_by(X_Coordinate, Y_Coordinate) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    CV = SD_Area / Mean_Area * 100,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(CV))
+
+# Display the top 20 most variable grid positions
+print(kable(head(grid_consistency, 20),
+            caption = "Top 20 Most Variable Grid Positions",
+            col.names = c("X Coordinate", "Y Coordinate", "Mean Total Area", "SD Total Area", "Coefficient of Variation (%)"),
+            digits = 2))
+
+# Identify patterns along the edges
+edge_analysis <- combined_summary_data %>%
+  mutate(
+    Is_Edge = X_Coordinate %in% c(1, 63) | Y_Coordinate %in% c(1, 8)
+  ) %>%
+  group_by(Trial, Is_Edge) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    .groups = "drop"
+  )
+
+print(kable(edge_analysis,
+            caption = "Comparison of Edge vs. Non-Edge Particles",
+            col.names = c("Trial", "Is Edge", "Mean Total Area", "SD Total Area"),
+            digits = 2))
+
+# Analyze horizontal and vertical patterns
+horizontal_pattern <- combined_summary_data %>%
+  group_by(Trial, Y_Coordinate) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    .groups = "drop"
+  )
+
+vertical_pattern <- combined_summary_data %>%
+  group_by(Trial, X_Coordinate) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    .groups = "drop"
+  )
+
+# Visualize horizontal patterns
+ggplot(horizontal_pattern, aes(x = Y_Coordinate, y = Mean_Area, color = factor(Trial))) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Horizontal Pattern of Particle Distribution",
+       x = "Y Coordinate (Row)", y = "Mean Total Area", color = "Trial") +
+  theme_minimal()
+
+# Visualize vertical patterns
+ggplot(vertical_pattern, aes(x = X_Coordinate, y = Mean_Area, color = factor(Trial))) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Vertical Pattern of Particle Distribution",
+       x = "X Coordinate (Column)", y = "Mean Total Area", color = "Trial") +
+  theme_minimal()
+```
+
+# 5. Overall Particle Size Distribution
+
+```{r particle_distribution}
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_particle_data$Diameter), by = 1)
+
+# Calculate normalized counts for each diameter threshold
+counts <- sapply(diameter_thresholds, function(x) {
+  combined_particle_data %>%
+    group_by(Trial) %>%
+    summarise(count = sum(Diameter > x)) %>%
+    left_join(trial_areas, by = "Trial") %>%
+    mutate(normalized_count = count * (0.1 / Total_Area)) %>%
+    summarise(total_normalized_count = sum(normalized_count)) %>%
+    pull(total_normalized_count)
+})
+
+# Create a data frame for plotting
+plot_data <- data.frame(
+  Diameter = log10(diameter_thresholds)^2,
+  Count = counts
+)
+
+# Plot the distribution
+ggplot(plot_data, aes(x = Diameter, y = Count)) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Normalized Count of Particles (log scale)",
+       title = "Distribution of Particle Diameters - After Contamination (Normalized to 0.1 m^2)") +
+  theme_minimal()
+```
+
+# 6. Comparison Across Trials and Cleaning Methods
+
+```{r trial_comparison}
+slope <- -0.926
+
+# Function to calculate normalized counts for a dataset
+get_normalized_counts <- function(data, trial_area) {
+  sapply(diameter_thresholds, function(x) {
+    sum(data$Diameter > x) * (0.1 / trial_area)
+  })
+}
+
+# Calculate normalized counts for each trial and cleaning method
+counts_by_trial <- combined_particle_data %>%
+  group_by(Trial, Cleaning_Method) %>%
+  group_modify(~ {
+    trial_area <- trial_areas$Total_Area[trial_areas$Trial == .y$Trial]
+    data.frame(
+      Diameter = log10(diameter_thresholds)^2,
+      Count = get_normalized_counts(.x, trial_area)
+    )
+  }) %>%
+  ungroup()
+
+counts_by_trial <- counts_by_trial %>%
+  mutate(
+    L = 10^(sqrt((log10(Count) / -slope) + (log10(Diameter)^2))),
+    IEST_Count = 10^(-slope * log10(Diameter)^2 + log10(L)^2)
+  )
+
+ggplot(counts_by_trial, aes(x = Diameter, y = Count, color = factor(Trial))) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", 
+       y = "Normalized Count of Particles (log scale)",
+       title = "Distribution of Particle Diameters by Trial and Cleaning Method",
+       subtitle = "After Contamination (Normalized to 0.1 m^2)",
+       color = "Trial & Cleaning Method") +
+  theme_minimal() +
+  scale_color_manual(values = c("red","pink","blue","cyan","forestgreen","lightgreen")) + 
+  theme(legend.position = "bottom", 
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 8))
+```
+
+# 7. Statistical Analysis
+
+```{r statistical_analysis}
+# Calculate mean and standard deviation of particle diameters for each trial and cleaning method
+trial_stats <- combined_particle_data %>%
+  group_by(Trial, Cleaning_Method) %>%
+  summarise(
+    Mean_Diameter = mean(Diameter),
+    SD_Diameter = sd(Diameter)
+  )
+
+kable(trial_stats, caption = "Mean and Standard Deviation of Particle Diameters by Trial and Cleaning Method (Normalized to 0.1 m^2)")
+
+# Function to perform statistical tests
+perform_tests <- function(data, group_var) {
+  # Check if there's more than one group
+  if (length(unique(data[[group_var]])) > 1) {
+    # Perform Kruskal-Wallis test
+    formula <- as.formula(paste("Diameter ~", group_var))
+    kw_test <- kruskal.test(formula, data = data)
+    print(kable(data.frame(Test = "Kruskal-Wallis", 
+                           Statistic = kw_test$statistic, 
+                           P_Value = kw_test$p.value), 
+                caption = paste("Kruskal-Wallis test for", group_var)))
+    
+    # If Kruskal-Wallis test is significant and there are more than two groups, perform post-hoc Dunn test
+    if (kw_test$p.value < 0.05 && length(unique(data[[group_var]])) > 2) {
+      dunn_test <- dunnTest(formula, data = data, method = "bonferroni")
+       print(kable(dunn_test$res, caption = paste("Post-hoc Dunn test for", group_var)))
+    }
+  } else {
+    print(paste("Only one", group_var, "present. No statistical test performed."))
+  }
+}
+
+# Perform tests between cleaning methods
+perform_tests(combined_particle_data, "Cleaning_Method")
+
+# Perform tests within each cleaning method
+cleaning_methods <- unique(combined_particle_data$Cleaning_Method)
+
+for (method in cleaning_methods) {
+  print(paste("Analysis for", method))
+  method_data <- combined_particle_data %>% filter(Cleaning_Method == method)
+  perform_tests(method_data, "Trial")
+}
+
+# Additional analysis: Compare mean particle diameters between cleaning methods
+mean_diameters <- combined_particle_data %>%
+  group_by(Cleaning_Method) %>%
+  summarise(Mean_Diameter = mean(Diameter))
+
+kable(mean_diameters, caption = "Mean particle diameters by cleaning method")
+
+# Visualize the distribution of particle diameters for each cleaning method
+ggplot(combined_particle_data, aes(x = Cleaning_Method, y = Diameter)) +
+  geom_boxplot() +
+  labs(title = "Distribution of Particle Diameters by Cleaning Method",
+       x = "Cleaning Method",
+       y = "Particle Diameter") +
+  theme_minimal()
+
+# Calculate the percentage of particles in different size ranges for each cleaning method
+size_ranges <- combined_particle_data %>%
+  group_by(Cleaning_Method) %>%
+  summarise(
+    Small = mean(Diameter <= 10) * 100,
+    Medium = mean(Diameter > 10 & Diameter <= 50) * 100,
+    Large = mean(Diameter > 50) * 100
+  )
+
+kable(size_ranges, caption = "Percentage of particles in different size ranges by cleaning method")
+```
+
+# 8. Comparison to IEST Standards
+
+```{r iest_comparison}
+# Define IEST standard parameters
+slope <- -0.926
+
+L_values <- counts_by_trial %>% 
+  group_by(Trial) %>% 
+  drop_na(L) %>% 
+  filter_all(all_vars(!is.infinite(.))) %>% 
+  summarise(L = mean(L))
+
+L_values <- L_values %>%
+  mutate(
+    intercept = (.926 * (-log10(L))^2)
+  )
+
+# Calculate best fit lines for each trial
+best_fit_lines <- counts_by_trial %>%
+  group_by(Trial) %>%
+  filter(Count > 0) %>% 
+  summarise(
+    slope = coef(lm(log10(Count) ~ Diameter))[2],
+    intercept = coef(lm(log10(Count) ~ Diameter))[1]
+  )
+
+# Calculate L values for each trial
+best_fit_lines <- best_fit_lines %>%
+  mutate(
+    L = 10^(sqrt(abs(intercept / slope)))
+  )
+
+# Add best fit lines to the plot
+ggplot() +
+  # Plot the trial data
+  geom_line(data = counts_by_trial, 
+            aes(x = Diameter, y = Count, color = factor(Trial))) +
+  # Add best fit lines for each trial
+  geom_abline(data = best_fit_lines, 
+              aes(slope = slope, intercept = intercept, color = factor(Trial)),
+              linetype = "dotted") +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", 
+       y = "Normalized Count of Particles (log scale)",
+       title = "Distribution of Particle Diameters by Trial with IEST Standards and Best Fit Lines",
+       subtitle = "After Contamination (Normalized to 0.1 m^2)",
+       color = "Trial",
+       linetype = "Line Type") +
+  theme_minimal() +
+  scale_color_manual(values = c("2" = "red", "3" = "pink", "4" = "blue", "5" = "cyan", "6" = "forestgreen", "7" = "lightgreen")) +
+  theme(legend.position = "bottom", 
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 8))
+
+# Create a comparison table
+comparison_table <- best_fit_lines %>%
+  left_join(counts_by_trial %>% 
+              select(Trial, Cleaning_Method) %>% 
+              distinct(), 
+            by = "Trial") %>%
+  select(Trial, Cleaning_Method, L, slope) %>%
+  rename(L_bestfit = L, Slope_bestfit = slope)
+
+comparison_table <- comparison_table %>%
+  left_join(L_values %>% 
+              select(Trial, L) %>% 
+              distinct() %>% 
+              rename(L_average = L), 
+            by = "Trial")
+
+kable(comparison_table, 
+      caption = "Comparison of L values: Best Fit vs. Average",
+      col.names = c("Trial", "Cleaning Method", "L (Best Fit)", "Slope (Best Fit)", "L (Average)"))
+```
+
+# 9. Conclusions and Recommendations
+
+Based on our revised analysis of the surface after contamination data, incorporating the correct imaging pattern (63 images across and 8 rows down, with a snaking pattern), we can draw the following conclusions:
+
+1. **Particle Distribution Patterns**: 
+   [Describe any consistent patterns or notable differences across trials, focusing on the 63x8 grid]
+
+2. **Edge Effects**: 
+   [Summarize findings from the edge vs. non-edge comparison, e.g., higher or lower particle concentrations along the edges]
+
+3. **Grid Position Variability**: 
+   [Describe the variability across grid positions, mentioning any highly variable positions and their distribution across the 63x8 grid]
+
+4. **Trial Correlations**: 
+   [Describe the level of correlation between trials, highlighting any strong positive or negative correlations]
+
+5. **Imaging Pattern Impact**: 
+   [Describe any observed effects of the snaking imaging pattern on the data]
+
+6. **Particle Size Distribution**:
+   [Describe the general trend ofthe particle size distribution and any notable differences between trials and cleaning methods]
+
+7. **Cleaning Method Comparisons**:
+   [Summarize the main differences observed between cleaning methods, based on the statistical analysis and size distribution comparisons]
+
+8. **IEST Standard Compliance**:
+   [Describe how well the data aligns with IEST standards, mentioning any significant deviations and which trials show the closest alignment]
+
+9. **Particle Characteristics**:
+   [Describe the results of the cluster analysis, including any notable patterns in how particle types are distributed across trials or cleaning methods]
+
+Based on these findings, we recommend the following:
+
+1. **Further Investigation of Variable Grid Positions**: Focus future analyses on the grid positions identified as highly variable, particularly those that align with the 63x8 grid structure.
+
+2. **Edge Effect Analysis**: Investigate the physical characteristics of the sample surfaces corresponding to edge positions, paying special attention to any patterns that align with the imaging direction.
+
+3. **Standardized Mapping**: Develop a standardized "map" of each sample type based on the 63x8 grid, marking known features or areas of interest to aid in future alignments and comparisons.
+
+4. **Imaging Pattern Impact Assessment**: Consider the potential impact of the snaking imaging pattern on particle distribution analysis. Investigate whether this pattern introduces any systematic biases in the data collection process.
+
+5. **Directional Bias Analysis**: Analyze the particle distribution patterns in relation to the imaging direction (left-to-right vs. right-to-left) to identify any potential directional biases in particle detection or imaging.
+
+6. **Time-Series Analysis**: Conduct a detailed time-series analysis of the imaging process, considering the order of image capture in the snaking pattern, to identify any temporal effects on particle detection or distribution.
+
+7. **Cleaning Method Refinement**: Based on the observed edge effects and any consistent patterns in particle distribution across the 63x8 grid, refine cleaning methods to address these specific areas.
+
+8. **High-Resolution Mapping**: Develop a protocol for stitching together the 63x8 grid of images to create a high-resolution map of the entire sample surface, which could reveal larger-scale patterns not visible in individual grid cells.
+
+9. **Cluster Analysis Follow-up**: Further investigate the clusters of similar particles identified across trials to understand their origin and potential impact on cleaning effectiveness.
+
+10. **Randomized Sampling**: For future studies, consider implementing a randomized or stratified sampling approach within the 63x8 grid to reduce potential biases introduced by the imaging pattern.
+
+11. **Size-Based Cleaning Optimization**: Conduct a more in-depth analysis of the relationship between particle size distribution and cleaning method effectiveness, potentially leading to optimized cleaning protocols for different particle size ranges.
+
+12. **IEST Standard Deviation Analysis**: Investigate the causes of deviations from IEST standards, particularly in trials that showed significant differences, to improve overall cleanliness levels.
+
+13. **Predictive Modeling**: Develop a predictive model based on the best-fit lines and L values to estimate expected particle distributions for future cleaning processes.
+
+14. **Comparative Analysis**: Perform a detailed comparison between the "before" and "after" contamination results to quantify the effectiveness of each cleaning method and identify any persistent contamination patterns.
+
+15. **Environmental Factor Analysis**: If possible, collect and analyze data on environmental factors (e.g., temperature, humidity, air flow) during the cleaning and imaging processes to identify any correlations with particle distribution patterns.
+
+By implementing these recommendations and continuing to refine the analysis based on the accurate 63x8 snaking imaging pattern, future studies can achieve more precise and informative results. This will lead to a deeper understanding of particle contamination patterns and cleaning method effectiveness, taking into account the specific characteristics of the imaging process used in this study.
+
+The insights gained from this analysis can be used to optimize cleaning protocols, improve contamination control strategies, and enhance the overall quality of particle-sensitive processes and environments.

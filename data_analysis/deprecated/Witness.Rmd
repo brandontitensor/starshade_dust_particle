@@ -1,0 +1,161 @@
+---
+title: "Classification"
+author: "Brandon Titensor"
+date: "2024-06-26"
+output: pdf_document
+---
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+library(tidymodels) 
+library(tidyverse)
+library(vroom) 
+library(randomForest)
+library(doParallel)
+library(lightgbm)
+library(themis)
+library(bonsai)
+library(bestNormalize)
+library(embed)
+library(pROC)
+library(car)
+library(corrplot) 
+library(readr)
+library(reshape2)
+library(ggplot2)
+```
+
+```{r}
+witnessafter2 <- read_csv("~/Desktop/College/Research/Trials/Witness/ImageJ Processed/witnessafter2/witnessafter2.csv")
+witnessafter3 <- read_csv("~/Desktop/College/Research/Trials/Witness/ImageJ Processed/witnessafter3/witnessafter3.csv")
+witnessafter4 <- read_csv("~/Desktop/College/Research/Trials/Witness/ImageJ Processed/witnessafter4/witnessafter4.csv")
+
+witnessbefore2 <- read_csv("~/Desktop/College/Research/Trials/Witness/ImageJ Processed/witnessbefore2/witnessbefore2.csv")
+witnessbefore3 <- read_csv("~/Desktop/College/Research/Trials/Witness/ImageJ Processed/witnessbefore3/witnessbefore3.csv")
+witnessbefore4 <- read_csv("~/Desktop/College/Research/Trials/Witness/ImageJ Processed/witnessbefore4/witnessbefore4.csv")
+
+witnessafter2 <- witnessafter2[,-c(1,15,16)]
+witnessafter3 <- witnessafter3[,-c(1,15,16)]
+witnessafter3 <- witnessafter3[,-c(1,15,16)]
+
+witnessbefore2 <- witnessbefore2[,-c(1,15,16)]
+witnessbefore3 <- witnessbefore3[,-c(1,15,16)]
+witnessbefore4 <- witnessbefore4[,-c(1,15,16)]
+
+witnessafter2$Diameter <- (sqrt(witnessafter2$Area/pi)*2)
+witnessafter3$Diameter <- (sqrt(witnessafter3$Area/pi)*2)
+witnessafter4$Diameter <- (sqrt(witnessafter4$Area/pi)*2)
+ 
+witnessbefore2$Diameter <- (sqrt(witnessbefore2$Area/pi)*2)
+witnessbefore3$Diameter <- (sqrt(witnessbefore3$Area/pi)*2)
+witnessbefore4$Diameter <- (sqrt(witnessbefore4$Area/pi)*2)
+
+```
+
+```{r}
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(witnessafter2,witnessafter3,witnessafter4,witnessbefore2,witnessbefore3,witnessbefore4)
+
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_data$Diameter)+5, by = 1)
+conversion <- .1/0.00067905
+
+# Initialize vectors to store the counts for each diameter threshold
+counts_before2 <- numeric(length(diameter_thresholds))
+counts_after2 <- numeric(length(diameter_thresholds))
+counts_before3 <- numeric(length(diameter_thresholds))
+counts_after3 <- numeric(length(diameter_thresholds))
+counts_before4 <- numeric(length(diameter_thresholds))
+counts_after4 <- numeric(length(diameter_thresholds))
+
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before2[i] <- sum(witnessbefore2$Diameter > threshold)*conversion
+  counts_after2[i] <- sum(witnessafter2$Diameter > threshold)*conversion
+  counts_before3[i] <- sum(witnessbefore3$Diameter > threshold)*conversion
+  counts_after3[i] <- sum(witnessafter3$Diameter > threshold)*conversion
+  counts_before4[i] <- sum(witnessbefore4$Diameter > threshold)*conversion
+  counts_after4[i] <- sum(witnessafter4$Diameter > threshold)*conversion
+}
+
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before2 = counts_before2,
+  After2 = counts_after2,
+  Before3 = counts_before3,
+  After3 = counts_after3,
+  Before4 = counts_before4,
+  After4 = counts_after4
+)
+
+# Calculate the difference between "Before" and "After" counts
+plot_data$Difference2 <- plot_data$After2 - plot_data$Before2
+plot_data$Difference3 <- plot_data$After3 - plot_data$Before3
+plot_data$Difference4 <- plot_data$After4 - plot_data$Before4
+
+plot_data1 <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Difference2 = plot_data$Difference2,
+  Difference3 = plot_data$Difference3,
+  Difference4 = plot_data$Difference4
+)
+
+# Reshape the data from wide to long format
+lm2 <- lm(plot_data1$Diameter ~ plot_data1$Difference2)
+lm3 <- lm(plot_data1$Diameter ~ plot_data1$Difference3)
+lm4 <- lm(plot_data1$Diameter ~ plot_data1$Difference4)
+summary(lm2)
+summary(lm3)
+summary(lm4)
+
+slope <- -0.926
+L3 <- 10^(sqrt((log10((sum(witnessafter3$Diameter >=
+                            max(witnessafter3$Diameter)))*conversion)/-slope) + 
+      (log10(max(witnessafter3$Diameter))^2)))
+L3b <- 10^(sqrt((log10((sum(witnessbefore3$Diameter >=
+                            max(witnessbefore3$Diameter)))*conversion)/-slope) + 
+      (log10(max(witnessbefore3$Diameter))^2)))
+
+
+intercept3 <- (-0.926 *(-log10(L3)^2))
+
+L2 <- 10^(sqrt((log10((sum(witnessafter2$Diameter >=
+                            max(witnessafter2$Diameter)))*conversion)/-slope) + 
+      (log10(max(witnessafter2$Diameter))^2)))
+
+L2b <- 10^(sqrt((log10((sum(witnessbefore2$Diameter >=
+                            max(witnessbefore2$Diameter)))*conversion)/-slope) + 
+      (log10(max(witnessbefore2$Diameter))^2)))
+
+
+intercept2 <- (-0.926 *(-log10(L2)^2))
+
+L4 <- 10^(sqrt((log10((sum(witnessafter4$Diameter >=
+                            max(witnessafter4$Diameter)))*conversion)/-slope) + 
+      (log10(max(witnessafter4$Diameter))^2)))
+
+L4b <- 10^(sqrt((log10((sum(witnessbefore4$Diameter >=
+                            max(witnessbefore4$Diameter)))*conversion)/-slope) + 
+      (log10(max(witnessbefore4$Diameter))^2)))
+
+
+intercept4 <- (-0.926 *(-log10(L4)^2))
+
+plot_data_long <- melt(plot_data1, id.vars = "Diameter", variable.name = "Group", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Group)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Diameter(log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Particles of Trial 2 and 3 with IEST Standards")+
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_minimal() +
+  geom_abline(slope = slope, intercept = intercept2, linetype = "dashed", color = "red", show.legend = T)+
+  geom_abline(slope = slope, intercept = intercept3, linetype = "dashed", color = "purple", show.legend = T) +
+  geom_abline(slope = slope, intercept = intercept4, linetype = "dashed", color = "green", show.legend = T)
+
+```
+

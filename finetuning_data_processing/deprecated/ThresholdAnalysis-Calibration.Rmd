@@ -1,0 +1,204 @@
+---
+title: "Threshold Analysis - Calibration"
+author: "Brandon Titensor"
+date: "2024-12-11"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# Load required libraries
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+library(scales)
+```
+
+```{r}
+# Read the data
+data <- read_csv("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Calibration/combined_particle_analysis.csv")
+
+# Filter out unwanted thresholds
+excluded_thresholds <- c(5, 70, 75)
+data <- data %>%
+  filter(!Threshold %in% excluded_thresholds)
+
+# Create summary statistics by threshold
+threshold_summary <- data %>%
+  group_by(Threshold, Image) %>%
+  summarize(
+    Particle_Count = n(),
+    Mean_Area = mean(Area),
+    Median_Area = median(Area),
+    SD_Area = sd(Area),
+    Total_Area = sum(Area),
+    .groups = 'drop'
+  )
+
+# Calculate overall statistics for each threshold
+overall_summary <- threshold_summary %>%
+  group_by(Threshold) %>%
+  summarize(
+    Mean_Particle_Count = mean(Particle_Count),
+    SD_Particle_Count = sd(Particle_Count),
+    Mean_Total_Area = mean(Total_Area),
+    SD_Total_Area = sd(Total_Area),
+    N_Images = n(),
+    .groups = 'drop'
+  )
+
+# Create visualizations
+
+# 1. Particle Count vs Threshold
+p1 <- ggplot(threshold_summary, aes(x = Threshold, y = Particle_Count)) +
+  geom_point(alpha = 0.3, color = "blue") +
+  geom_smooth(method = "loess", color = "red") +
+  theme_minimal() +
+  labs(title = "Particle Count vs Threshold",
+       subtitle = "Each point represents one image",
+       y = "Number of Particles",
+       x = "Threshold Value")
+
+# 2. Box plot of Particle Counts
+p2 <- ggplot(threshold_summary, aes(x = factor(Threshold), y = Particle_Count)) +
+  geom_boxplot(fill = "lightblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45)) +
+  labs(title = "Distribution of Particle Counts",
+       x = "Threshold Value",
+       y = "Number of Particles")
+
+# 3. Mean Particle Area vs Threshold
+p3 <- ggplot(threshold_summary, aes(x = Threshold, y = Mean_Area)) +
+  geom_point(alpha = 0.3, color = "green") +
+  geom_smooth(method = "loess", color = "red") +
+  theme_minimal() +
+  labs(title = "Mean Particle Area vs Threshold",
+       y = "Mean Particle Area",
+       x = "Threshold Value")
+
+# 4. Total Area vs Threshold
+p4 <- ggplot(threshold_summary, aes(x = Threshold, y = Total_Area)) +
+  geom_point(alpha = 0.3, color = "purple") +
+  geom_smooth(method = "loess", color = "red") +
+  theme_minimal() +
+  labs(title = "Total Particle Area vs Threshold",
+       y = "Total Area",
+       x = "Threshold Value")
+
+print(p1)
+print(p2)
+print(p3)
+print(p4)
+
+
+# Calculate coefficient of variation (CV) for each threshold
+cv_analysis <- threshold_summary %>%
+  group_by(Threshold) %>%
+  summarize(
+    CV_Particle_Count = sd(Particle_Count) / mean(Particle_Count) * 100,
+    CV_Total_Area = sd(Total_Area) / mean(Total_Area) * 100,
+    .groups = 'drop'
+  )
+
+# Create CV plot
+p5 <- ggplot(cv_analysis, aes(x = Threshold)) +
+  geom_line(aes(y = CV_Particle_Count, color = "Particle Count"), size = 1) +
+  geom_line(aes(y = CV_Total_Area, color = "Total Area"), size = 1) +
+  theme_minimal() +
+  labs(title = "Coefficient of Variation vs Threshold",
+       y = "Coefficient of Variation (%)",
+       x = "Threshold Value",
+       color = "Measure") +
+  scale_color_manual(values = c("Particle Count" = "blue", "Total Area" = "red"))
+
+# Display CV plot
+print(p5)
+
+# Find potential optimal thresholds
+optimal_analysis <- overall_summary %>%
+  mutate(
+    CV_Particle_Count = SD_Particle_Count / Mean_Particle_Count * 100
+  ) %>%
+  arrange(CV_Particle_Count) %>%
+  select(Threshold, Mean_Particle_Count, CV_Particle_Count, Mean_Total_Area, N_Images)
+
+# Print top 5 most stable thresholds (lowest CV)
+cat("\nTop 5 most stable thresholds (based on particle count variation):\n")
+print(head(optimal_analysis, 5))
+
+# Calculate stability score for each threshold
+# Combines CV of particle count and total area with mean particle count
+stability_score <- cv_analysis %>%
+  mutate(
+    Normalized_CV_Particle = scale(CV_Particle_Count),
+    Normalized_CV_Area = scale(CV_Total_Area),
+    Stability_Score = -1 * (Normalized_CV_Particle + Normalized_CV_Area) / 2
+  ) %>%
+  arrange(desc(Stability_Score))
+
+# Print recommended thresholds
+cat("\nRecommended thresholds based on stability score:\n")
+print(head(stability_score %>% select(Threshold, Stability_Score), 5))
+
+# Create histogram of particle areas for the top 3 recommended thresholds
+top_thresholds <- head(stability_score$Threshold, 3)
+p6 <- ggplot(data %>% filter(Threshold %in% top_thresholds),
+             aes(x = Area, fill = factor(Threshold))) +
+  geom_histogram(position = "dodge", bins = 30, alpha = 0.7) +
+  scale_x_log10() +
+  theme_minimal() +
+  labs(title = "Particle Area Distribution for Top 3 Thresholds",
+       x = "Particle Area (log scale)",
+       y = "Count",
+       fill = "Threshold")
+
+# Display histogram
+print(p6)
+
+
+# Create cumulative count plot for particles greater than each area
+p7 <- data %>%
+  filter(Threshold %in% top_thresholds) %>%
+  group_by(Threshold) %>%
+  arrange(Area) %>%
+  select(Area, Threshold) %>%
+  group_by(Threshold) %>%
+  mutate(
+    Count_Greater = n() - row_number() + 1  # Count of particles with area >= current area
+  ) %>%
+  ggplot(aes(x = Area, y = Count_Greater, color = factor(Threshold))) +
+  geom_line(size = 1) +
+  scale_x_log10() +  # Log scale for area to better show distribution
+  theme_minimal() +
+  labs(title = "Number of Particles with Area Greater Than X",
+       subtitle = "For top 3 recommended thresholds",
+       x = "Area (log scale)",
+       y = "Number of Particles",
+       color = "Threshold") +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom")
+
+# Print both the regular histogram and cumulative plot
+print(p7)
+
+# Create summary of particle counts at different area thresholds
+area_thresholds <- c(10, 50, 100, 500, 1000)
+count_summary <- data %>%
+  filter(Threshold %in% top_thresholds) %>%
+  group_by(Threshold) %>%
+  summarize(
+    Total_Particles = n(),
+    `Particles>=10` = sum(Area >= 10),
+    `Particles>=50` = sum(Area >= 50),
+    `Particles>=100` = sum(Area >= 100),
+    `Particles>=500` = sum(Area >= 500),
+    `Particles>=1000` = sum(Area >= 1000)
+  )
+
+# Print summary for top 3 thresholds
+cat("\nParticle counts at different area thresholds:\n")
+print(count_summary)
+
+```

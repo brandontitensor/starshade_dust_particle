@@ -1,0 +1,653 @@
+---
+title: "Updated Analysis of Surface Before Particle Data with Cleaning Methods"
+author: "Data Analyst"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(knitr)
+library(rstatix)
+library(ggpubr)
+library(gridExtra)
+library(data.table)
+library(cowplot)
+library(ggplot2)
+library(dplyr)
+library(grid)
+```
+
+## 1. Data Loading and Preprocessing
+
+```{r data_loading, echo = FALSE, warning = FALSE, message = FALSE}
+# Function to load and process data (either before or after)
+load_data <- function(condition) {
+  # Function to load and process particle data for a single sample
+  load_particle_data <- function(trial_number, sample_number, cond) {
+    tryCatch({
+      particle_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Particles_%sTr%dSa%dSurf.csv", 
+                               cond, trial_number, sample_number, cond, trial_number, sample_number)
+      
+      particle_data <- read_csv(particle_path)
+      particle_data <- particle_data[, 2:(ncol(particle_data)-2)]
+      particle_data$Diameter <- sqrt(particle_data$Area / pi) * 2
+      particle_data$Sample <- sample_number
+      particle_data$Trial <- trial_number
+      
+      return(particle_data)
+    }, error = function(e) {
+      message(sprintf("Error loading particle data for %s Trial %d, Sample %d: %s", cond, trial_number, sample_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Function to load and process summary data for a single sample
+  load_summary_data <- function(trial_number, sample_number, cond) {
+    tryCatch({
+      summary_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Summary_%sTr%dSa%dSurf.csv", 
+                              cond, trial_number, sample_number, cond, trial_number, sample_number)
+      
+      summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
+      names(summary_data) <- make.names(names(summary_data))
+      summary_data <- summary_data %>% 
+        drop_na() %>%
+        mutate(
+          Sample = sample_number,
+          Trial = trial_number,
+          Slice_Number = as.integer(substr(Slice, nchar(Slice)-6, nchar(Slice)-4))
+        )
+      
+      return(summary_data)
+    }, error = function(e) {
+      message(sprintf("Error loading summary data for %s Trial %d, Sample %d: %s", cond, trial_number, sample_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Load data for trials 2-7 and 5 samples in each trial
+  all_particle_data <- map2(rep(2:8, each = 5), rep(1:5, times = 7), 
+                            ~load_particle_data(.x, .y, condition))
+  all_summary_data <- map2(rep(2:8, each = 5), rep(1:5, times = 7), 
+                           ~load_summary_data(.x, .y, condition))
+
+  # Combine all data into single data frames
+  combined_particle_data <- bind_rows(all_particle_data)
+  combined_summary_data <- bind_rows(all_summary_data)
+
+  # Add cleaning method information
+  add_cleaning_method <- function(data) {
+    data %>%
+      mutate(Cleaning_Method = case_when(
+        Trial %in% c(2, 3) ~ "IPA rinse",
+        Trial %in% c(4, 5) ~ "Drag and wipe",
+        Trial %in% c(6, 7) ~ "First contact",
+        Trial == 8 ~ "First contact & Drag and wipe",
+        TRUE ~ NA_character_
+      ))
+  }
+
+  combined_particle_data <- add_cleaning_method(combined_particle_data)
+  combined_summary_data <- add_cleaning_method(combined_summary_data)
+
+  # Calculate total imaged area for each trial
+  image_size <- 600 * 450 # microns^2
+  trial_areas <- combined_summary_data %>%
+    group_by(Trial, Cleaning_Method) %>%
+    summarise(
+      Total_Images = n(),
+      Total_Area = Total_Images * image_size * 1e-12, # Convert to m^2
+      .groups = "drop"
+    )
+
+  # Normalize particle counts to represent 0.1 m^2
+  normalization_factor <- 0.1 / trial_areas$Total_Area
+  combined_particle_data <- combined_particle_data %>%
+    left_join(trial_areas, by = c("Trial", "Cleaning_Method")) %>%
+    mutate(Normalized_Count = normalization_factor[Trial - 1])
+
+  list(particle_data = combined_particle_data, 
+       summary_data = combined_summary_data, 
+       trial_areas = trial_areas)
+}
+
+# Load before and after data
+before_data <- load_data("Bef")
+
+
+```
+
+## 2. Sample Alignment and Permanent Feature Identification
+
+```{r sample_alignment, echo = FALSE, warning = FALSE, message = FALSE}
+assign_slice_numbers <- function(particle_data, summary_data) {
+  setDT(particle_data)
+  setDT(summary_data)
+  
+  summary_data <- summary_data[order(Trial, Sample, Slice_Number)]
+  summary_data[, cum_count := cumsum(Count), by = .(Trial, Sample)]
+  
+  find_slice <- function(count, cum_counts) {
+    which.max(cum_counts >= count)
+  }
+  
+  particle_data[, particle_count := 1:.N, by = .(Trial, Sample)]
+  particle_data[, Slice_Number := {
+    cum_counts <- summary_data[Trial == .BY$Trial & Sample == .BY$Sample, cum_count]
+    sapply(particle_count, find_slice, cum_counts = cum_counts)
+  }, by = .(Trial, Sample)]
+  
+  particle_data[, particle_count := NULL]
+  
+  return(particle_data)
+}
+
+# Assuming before_data is already loaded
+before_particle_data_with_slices <- assign_slice_numbers(before_data$particle_data, before_data$summary_data)
+
+# Calculate the proportion of increase in total area for each sample
+proportion_increase <- before_particle_data_with_slices %>%
+  group_by(Trial, Sample) %>%
+  summarise(Total_Area_Before = sum(Area), .groups = "drop") %>% 
+  pivot_wider(names_from = Trial,
+              values_from = Total_Area_Before,
+              names_prefix = "Trial_")
+
+proportion_increase <- proportion_increase %>%
+  mutate(across(starts_with("Trial_"), 
+                ~./proportion_increase$Trial_8, 
+                .names = "Proportion_Increase{str_extract(.col, '[0-9]+')}"))
+
+
+prepare_slice_data <- function(data, condition) {
+  data$summary_data %>%
+    group_by(Trial, Sample, Slice_Number, Cleaning_Method) %>%
+    summarise(Total_Area = sum(Total.Area), .groups = "drop") %>%
+    mutate(Condition = condition)
+}
+
+before_slice_data <- prepare_slice_data(before_data, "Before")
+
+# Create separate dataframes for each trial
+slice_data_list <- lapply(2:8, function(t) {
+  before_slice_data %>% filter(Trial == t)
+})
+names(slice_data_list) <- paste0("slice_data", 2:8)
+list2env(slice_data_list, envir = .GlobalEnv)
+
+# Function to align slices
+align_slices <- function(before_data, after_data, proportion_increase, tolerance = 0.1) {
+  aligned_data <- before_data %>%
+    left_join(proportion_increase, by = "Sample") %>%
+    mutate(Adjusted_Area = Total_Area * get(paste0("Proportion_Increase", unique(Trial)))) %>%
+    group_by(Sample) %>%
+    mutate(Shift = NA_integer_)
+
+  for (s in unique(aligned_data$Sample)) {
+    before_sample <- filter(aligned_data, Sample == s)
+    after_sample <- filter(after_data, Sample == s)
+    
+    best_shift <- 0
+    best_correlation <- -Inf
+    
+    for (shift in -50:50) {  # Adjust range as needed
+      shifted_before <- before_sample %>%
+        mutate(Shifted_Slice = Slice_Number + shift) %>%
+        filter(Shifted_Slice > 0, Shifted_Slice <= max(Slice_Number))
+      
+      merged_data <- inner_join(
+        shifted_before, 
+        after_sample,
+        by = c("Shifted_Slice" = "Slice_Number")
+      )
+      
+      if (nrow(merged_data) > 20) {  # Ensure enough data points for correlation
+        correlation <- cor(merged_data$Adjusted_Area, merged_data$Total_Area.y)
+        if (correlation > best_correlation) {
+          best_correlation <- correlation
+          best_shift <- shift
+        }
+      }
+    }
+    
+    # Use tolerance to determine if shift should be applied
+    if (best_correlation > (1 - tolerance)) {
+      aligned_data <- aligned_data %>%
+        mutate(Shift = ifelse(Sample == s, best_shift, Shift))
+    } else {
+      aligned_data <- aligned_data %>%
+        mutate(Shift = ifelse(Sample == s, 0, Shift))
+    }
+  }
+  
+  aligned_data %>%
+    mutate(Aligned_Slice_Number = Slice_Number + Shift) %>%
+    select(-Adjusted_Area)
+}
+
+# Align each trial to trial 8
+aligned_data_list <- list()
+for (trial in 2:7) {
+  aligned_data_list[[paste0("aligned_data", trial)]] <- 
+    align_slices(get(paste0("slice_data", trial)), slice_data8, proportion_increase, 0.5)
+}
+
+# Function to create aligned heatmaps
+create_aligned_heatmap <- function(before_data, after_data, trial, sample) {
+  before <- before_data %>%
+    filter(Sample == sample) %>%
+    select(Aligned_Slice_Number, Total_Area) %>%
+    mutate(Condition = "Before")
+
+  after <- after_data %>%
+    filter(Sample == sample) %>%
+    select(Slice_Number, Total_Area) %>%
+    rename(Aligned_Slice_Number = Slice_Number) %>%
+    mutate(Condition = "After")
+
+  combined_data <- bind_rows(before, after) %>%
+    mutate(Condition = factor(Condition, levels = c("Before", "After")))
+
+  ggplot(combined_data, aes(x = Aligned_Slice_Number, y = Condition, fill = Total_Area)) +
+    geom_tile() +
+    scale_fill_gradient(low = "white", high = "red") +
+    scale_x_continuous(breaks = seq(0, 500, by = 100)) +
+    labs(title = paste("Aligned - Trial", trial, "Sample", sample),
+         x = "Aligned Slice Number", y = "Condition", fill = "Total Area") +
+    theme_minimal() +
+    theme(legend.position = "bottom",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.text.y = element_text(size = 10),
+          legend.key.size = unit(.5, 'cm'),
+          legend.key.height = unit(.3, 'cm'),
+          legend.key.width = unit(.5, 'cm'),
+          legend.title = element_text(size=7),
+          legend.text = element_text(size=5))
+}
+
+# Generate aligned heatmaps for all trials and samples
+trials <- 2:7
+samples <- 1:5
+aligned_heatmaps <- list()
+for (trial in trials) {
+  for (sample in samples) {
+    heatmap <- create_aligned_heatmap(aligned_data_list[[paste0("aligned_data", trial)]], 
+                                      slice_data8, trial, sample)
+    aligned_heatmaps[[paste("Trial", trial, "Sample", sample)]] <- heatmap
+  }
+}
+
+# Display aligned heatmaps for each trial
+for (trial in trials) {
+  trial_heatmaps <- aligned_heatmaps[grep(paste("Trial", trial), names(aligned_heatmaps))]
+  print(do.call(grid.arrange, c(trial_heatmaps, ncol = 3)))
+}
+
+# Calculate alignment statistics
+alignment_stats <- bind_rows(aligned_data_list) %>%
+  group_by(Trial, Sample) %>%
+  summarise(
+    Shift = unique(Shift),
+    Correlation = cor(Total_Area, slice_data8$Total_Area[slice_data8$Sample == first(Sample)]),
+    .groups = "drop"
+  ) %>%
+  left_join(proportion_increase, by = "Sample")
+
+kable(alignment_stats, caption = "Alignment Statistics by Trial and Sample")
+
+
+```
+
+## 3. Data Adjustment Based on Alignment
+
+```{r data_adjustment, echo = FALSE, warning = FALSE, message = FALSE}
+# Convert dataframes to data.tables
+setDT(before_data$summary_data)
+setDT(before_data$particle_data)
+setDT(sample_alignments)
+
+# Function to apply alignment efficiently
+apply_alignment <- function(data, alignments, reference_trial) {
+  alignments <- alignments[Trial1 == reference_trial, .(Trial2, Shift)]
+  setnames(alignments, "Trial2", "Trial")
+  
+  data <- merge(data, alignments, by = "Trial", all.x = TRUE)
+  data[is.na(Shift), Shift := 0]
+  data[, Aligned_Slice_Number := Slice_Number + Shift]
+  
+  data[]
+}
+
+# Function to update coordinates
+update_coordinates <- function(slice_number, width = 63, height = 8) {
+  row <- (slice_number - 1) %/% width
+  col <- (slice_number - 1) %% width
+  col <- ifelse(row %% 2 == 1, width - 1 - col, col)
+  list(x = col + 1, y = row + 1)
+}
+
+# Process summary data
+new_combined_summary_data <- before_data$summary_data[, {
+  reference_trial <- min(Trial)
+  sample_align <- sample_alignments[Sample == .BY$Sample]
+  aligned_data <- apply_alignment(.SD, sample_align, reference_trial)
+  
+  coords <- aligned_data[, update_coordinates(Aligned_Slice_Number), by = 1:nrow(aligned_data)]
+  aligned_data[, c("New_X_Coordinate", "New_Y_Coordinate") := .(coords$V1, coords$V2)]
+  
+  aligned_data
+}, by = Sample]
+
+# Process particle data in chunks
+chunk_size <- 1e6  # Adjust based on available memory
+new_combined_particle_data <- data.table()
+
+for (sample in unique(before_data$particle_data$Sample)) {
+  sample_data <- before_data$particle_data[Sample == sample]
+  reference_trial <- min(sample_data$Trial)
+  sample_align <- sample_alignments[Sample == sample]
+  
+  for (i in seq(1, nrow(sample_data), by = chunk_size)) {
+    chunk_end <- min(i + chunk_size - 1, nrow(sample_data))
+    chunk <- sample_data[i:chunk_end]
+    aligned_chunk <- apply_alignment(chunk, sample_align, reference_trial)
+    
+    coords <- aligned_chunk[, update_coordinates(Aligned_Slice_Number), by = 1:nrow(aligned_chunk)]
+    aligned_chunk[, c("New_X_Coordinate", "New_Y_Coordinate") := .(coords$V1, coords$V2)]
+    
+    new_combined_particle_data <- rbindlist(list(new_combined_particle_data, aligned_chunk))
+  }
+}
+
+# Filter for common slices
+common_slices <- new_combined_summary_data[, .N, by = .(Sample, Aligned_Slice_Number)
+                                           ][N == uniqueN(new_combined_summary_data$Trial)]
+
+new_combined_summary_data <- new_combined_summary_data[common_slices, on = .(Sample, Aligned_Slice_Number)]
+new_combined_particle_data <- new_combined_particle_data[common_slices, on = .(Sample, Aligned_Slice_Number)]
+
+# Remove unnecessary columns
+new_combined_summary_data[, c("Grid_Coordinates", "X_Coordinate", "Y_Coordinate") := NULL]
+new_combined_particle_data[, c("X_Coordinate", "Y_Coordinate") := NULL]
+
+# Calculate total imaged area for each trial
+image_size <- 600 * 450  # microns^2
+new_trial_areas <- new_combined_summary_data %>%
+  group_by(Trial, Cleaning_Method) %>%
+  summarise(
+    Total_Images = n(),
+    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
+    .groups = "drop"
+  )
+
+# Display the new trial areas
+kable(new_trial_areas, caption = "New Trial Areas Based on Aligned Particle Data")
+
+# Calculate new normalization factors
+new_normalization_factors <- new_trial_areas %>%
+  mutate(Normalization_Factor = 0.1 / Total_Area)
+
+# Display the new normalization factors
+kable(select(new_normalization_factors, Trial, Cleaning_Method, Normalization_Factor),
+      caption = "New Normalization Factors by Trial and Cleaning Method")
+```
+
+## 4. Overall Particle Size Distribution
+
+```{r particle_distribution, echo = FALSE, warning = FALSE, message = FALSE}
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(new_combined_particle_data$Diameter), by = 1)
+
+# Calculate normalized counts for each diameter threshold
+counts <- sapply(diameter_thresholds, function(x) {
+  new_combined_particle_data %>%
+    group_by(Trial) %>%
+    summarise(count = sum(Diameter > x)) %>%
+    left_join(new_trial_areas, by = "Trial") %>%
+    mutate(normalized_count = count * (0.1 / Total_Area)) %>%
+    summarise(total_normalized_count = sum(normalized_count)) %>%
+    pull(total_normalized_count)
+})
+
+# Create a data frame for plotting
+plot_data <- data.frame(
+  Diameter = log10(diameter_thresholds)^2,
+  Count = counts
+)
+
+# Plot the distribution
+ggplot(plot_data, aes(x = Diameter, y = Count)) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Normalized Count of Particles (log scale)",
+       title = "Distribution of Particle Diameters - Before Contamination (Normalized to 0.1 m^2)") +
+  theme_minimal()
+```
+
+## 5. Comparison Across Trials and Cleaning Methods
+
+```{r trial_comparison, echo = FALSE, warning = FALSE, message = FALSE}
+slope <- -0.926
+
+# Function to calculate normalized counts for a dataset
+get_normalized_counts <- function(data, trial_area) {
+  sapply(diameter_thresholds, function(x) {
+    sum(data$Diameter > x) * (0.1 / trial_area)
+  })
+}
+
+# Calculate normalized counts for each trial and cleaning method
+counts_by_trial <- new_combined_particle_data %>%
+  group_by(Trial, Cleaning_Method) %>%
+  group_modify(~ {
+    trial_area <- new_trial_areas$Total_Area[new_trial_areas$Trial == .y$Trial]
+    data.frame(
+      Diameter = log10(diameter_thresholds)^2,
+      Count = get_normalized_counts(.x, trial_area)
+    )
+  }) %>%
+  ungroup()
+
+counts_by_trial <- counts_by_trial %>%
+  mutate(
+    L = 10^(sqrt((log10(Count) / -slope) + (log10(Diameter)^2)))
+  )
+
+ggplot(counts_by_trial, aes(x = Diameter, y = Count, color = factor(Trial))) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", 
+       y = "Normalized Count of Particles (log scale)",
+       title = "Distribution of Particle Diameters by Trial and Cleaning Method",
+       subtitle = "Before Contamination (Normalized to 0.1 m^2)",
+       color = "Trial & Cleaning Method") +
+  theme_minimal() +
+  scale_color_manual(values = c("red","pink","blue","cyan","forestgreen","lightgreen","gold")) + 
+  theme(legend.position = "bottom", 
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 8))
+```
+
+## 6. Statistical Analysis
+
+```{r statistical_analysis, echo = FALSE, warning = FALSE, message = FALSE}
+# Calculate mean and standard deviation of particle diameters for each trial and cleaning method
+trial_stats <- new_combined_particle_data %>%
+  group_by(Trial, Cleaning_Method) %>%
+  summarise(
+    Mean_Diameter = mean(Diameter),
+    SD_Diameter = sd(Diameter)
+  )
+
+kable(trial_stats, caption = "Mean and Standard Deviation of Particle Diameters by Trial and Cleaning Method (Normalized to 0.1 m^2)")
+
+# Function to perform statistical tests
+perform_tests <- function(data, group_var) {
+  # Check if there's more than one group
+  if (length(unique(data[[group_var]])) > 1) {
+    # Perform Kruskal-Wallis test
+    formula <- as.formula(paste("Diameter ~", group_var))
+    kw_test <- kruskal.test(formula, data = data)
+    print(kable(data.frame(Test = "Kruskal-Wallis", 
+                           Statistic = kw_test$statistic, 
+                           P_Value = kw_test$p.value), 
+                caption = paste("Kruskal-Wallis test for", group_var)))
+    
+    # If Kruskal-Wallis test is significant and there are more than two groups, perform post-hoc Dunn test
+    if (kw_test$p.value < 0.05 && length(unique(data[[group_var]])) > 2) {
+      dunn_test <- dunnTest(formula, data = data, method = "bonferroni")
+      print(kable(dunn_test$res, caption = paste("Post-hoc Dunn test for", group_var)))
+    }
+  } else {
+    print(paste("Only one", group_var, "present. No statistical test performed."))
+  }
+}
+
+# Perform tests between cleaning methods
+perform_tests(new_combined_particle_data, "Cleaning_Method")
+
+# Perform tests within each cleaning method
+cleaning_methods <- unique(new_combined_particle_data$Cleaning_Method)
+
+for (method in cleaning_methods) {
+  print(paste("Analysis for", method))
+  method_data <- new_combined_particle_data %>% filter(Cleaning_Method == method)
+  perform_tests(method_data, "Trial")
+}
+
+# Additional analysis: Compare mean particle diameters between cleaning methods
+mean_diameters <- new_combined_particle_data %>%
+  group_by(Cleaning_Method) %>%
+  summarise(Mean_Diameter = mean(Diameter))
+
+kable(mean_diameters, caption = "Mean particle diameters by cleaning method")
+
+# Visualize the distribution of particle diameters for each cleaning method
+ggplot(new_combined_particle_data, aes(x = Cleaning_Method, y = Diameter)) +
+  geom_boxplot() +
+  labs(title = "Distribution of Particle Diameters by Cleaning Method",
+       x = "Cleaning Method",
+       y = "Particle Diameter") +
+  theme_minimal()
+
+# Calculate the percentage of particles in different size ranges for each cleaning method
+size_ranges <- new_combined_particle_data %>%
+  group_by(Cleaning_Method) %>%
+  summarise(
+    Small = mean(Diameter <= 5) * 100,
+    Medium = mean(Diameter > 5 & Diameter <= 15) * 100,
+    Large = mean(Diameter > 15) * 100
+  )
+
+kable(size_ranges, caption = "Percentage of particles in different size ranges by cleaning method")
+```
+
+## 7. Comparison to IEST Standards
+
+```{r iest_comparison, echo = FALSE, warning = FALSE, message = FALSE}
+# Define IEST standard parameters
+slope <- -0.926
+
+L_values <- counts_by_trial %>% 
+  group_by(Trial) %>% 
+  drop_na(L) %>% 
+  filter_all(all_vars(!is.infinite(.))) %>% 
+  summarise(L = mean(L))
+
+L_values <- L_values %>%
+  mutate(
+    intercept = (.926 * (-log10(L))^2)
+  )
+
+# Calculate best fit lines for each trial
+best_fit_lines <- counts_by_trial %>%
+  group_by(Trial) %>%
+  filter(Count > 0) %>% 
+  summarise(
+    slope = coef(lm(log10(Count) ~ Diameter))[2],
+    intercept = coef(lm(log10(Count) ~ Diameter))[1]
+  )
+
+# Calculate L values for each trial
+best_fit_lines <- best_fit_lines %>%
+  mutate(
+    L = 10^(sqrt(abs(intercept / slope)))
+  )
+
+# Add best fit lines to the plot
+ggplot() +
+  # Plot the trial data
+  geom_line(data = counts_by_trial, 
+            aes(x = Diameter, y = Count, color = factor(Trial))) +
+  # Add best fit lines for each trial
+  geom_abline(data = best_fit_lines, 
+              aes(slope = slope, intercept = intercept, color = factor(Trial)),
+              linetype = "dotted") +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", 
+       y = "Normalized Count of Particles (log scale)",
+       title = "Distribution of Particle Diameters by Trial with IEST Standards and Best Fit Lines",
+       subtitle = "Before Contamination (Normalized to 0.1 m^2)",
+       color = "Trial",
+       linetype = "Line Type") +
+  theme_minimal() +
+  scale_color_manual(values = c("2" = "red", "3" = "pink", "4" = "blue", "5" = "cyan", "6" = "forestgreen", "7" = "lightgreen", "8" = "gold")) +
+  theme(legend.position = "bottom", 
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 8))
+
+# Create a comparison table
+comparison_table <- best_fit_lines %>%
+  left_join(counts_by_trial %>% 
+              select(Trial, Cleaning_Method) %>% 
+              distinct(), 
+            by = "Trial") %>%
+  select(Trial, Cleaning_Method, L, slope) %>%
+  rename(L_bestfit = L, Slope_bestfit = slope)
+
+comparison_table <- comparison_table %>%
+  left_join(L_values %>% 
+              select(Trial, L) %>% 
+              distinct() %>% 
+              rename(L_average = L), 
+            by = "Trial")
+
+kable(comparison_table, 
+      caption = "Comparison of L values: Best Fit vs. Average",
+      col.names = c("Trial", "Cleaning Method", "L (Best Fit)", "Slope (Best Fit)", "L (Average)"))
+```
+
+## 8. Conclusions and Recommendations
+
+Based on this updated analysis of the surface before contamination data, we can draw the following conclusions:
+
+1. **Particle Distribution**: The overall particle size distribution follows a power law, with more small particles than large ones. This is consistent across all trials and cleaning methods.
+
+2. **Cleaning Method Comparison**: There are noticeable differences in particle distributions between different cleaning methods. The statistical analysis reveals significant differences between cleaning methods, particularly in the mean particle diameters and the distribution of particle sizes.
+
+3. **Trial Consistency**: While there are similarities in particle distributions across trials using the same cleaning method, there are also notable differences. This suggests that factors beyond the cleaning method, such as environmental conditions or sample handling, may influence particle distribution.
+
+4. **IEST Standard Compliance**: The comparison with IEST standards shows varying degrees of compliance across trials. Some trials show closer alignment with the expected distribution than others.
+
+5. **Permanent Features**: The analysis identified potential permanent features across samples, which could represent persistent contamination or structural elements of the samples.
+
+Based on these findings, we recommend the following:
+
+1. **Optimize Cleaning Methods**: Further investigation into the effectiveness of each cleaning method for different particle size ranges. Consider combining methods to leverage their strengths.
+
+2. **Standardize Procedures**: Implement stricter controls on environmental conditions and sample handling to reduce variability between trials.
+
+3. **Focus on Persistent Contamination**: Investigate the nature of the identified permanent features to determine if they represent contamination that resists cleaning or are inherent to the sample structure.
+
+4. **Improve IEST Compliance**: For trials showing significant deviations from IEST standards, review and adjust cleaning processes to improve compliance.
+
+5. **Enhanced Particle Characterization**: Consider additional analyses to characterize particle properties beyond size, such as composition or adhesion strength, to better understand the nature of the contamination.
+
+6. **Regular Monitoring**: Implement a system for continuous monitoring of cleaning effectiveness and particle distribution over time to identify trends and maintain consistent cleanliness levels.
+
+7. **Comparative Analysis**: Conduct a detailed comparison between these "before" results and subsequent "after" contamination studies to quantify the effectiveness of contamination processes and any changes in particle distribution patterns.
+
+By implementing these recommendations and continuing to refine the analysis, future studies can achieve more precise and informative results, leading to improved contamination control strategies and enhanced quality in particle-sensitive processes and environments.

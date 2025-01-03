@@ -1,0 +1,540 @@
+---
+title: "Combined Threshold Analysis"
+author: "Brandon Titensor"
+date: "2024-12-11"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# Load required libraries
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+library(scales)
+```
+
+```{r load_data}
+# Read all datasets
+calibration_data <- read_csv("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Calibration/combined_particle_analysis.csv") %>%
+  mutate(Type = "Calibration")
+
+edge_data <- read_csv("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Edges/combined_particle_analysis.csv") %>%
+  mutate(Type = "Edge")
+
+# Read and process surface data
+surface_data <- read_csv("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Surfaces/combined_surface_analysis.csv") %>%
+  mutate(
+    Treatment = case_when(
+      str_starts(Folder, "Bef") ~ "Before",
+      str_starts(Folder, "Aft") ~ "After",
+      TRUE ~ "Unknown"
+    )
+  ) %>%
+  filter(Treatment != "Unknown") %>%
+  mutate(Type = paste("Surface", Treatment))
+
+# Combine all data
+all_data <- bind_rows(
+  calibration_data, 
+  edge_data, 
+  surface_data
+)
+
+# Filter out unwanted thresholds
+excluded_thresholds1 <- c(5)
+excluded_thresholds2 <- c(5, 70, 75,80)
+all_data <- all_data %>%
+  filter(!Threshold %in% excluded_thresholds2)
+
+calibration_data <- calibration_data %>%
+  filter(!Threshold %in% excluded_thresholds2)
+
+edge_data <- edge_data %>%
+  filter(!Threshold %in% excluded_thresholds2)
+surface_data <- surface_data %>%
+  filter(!Threshold %in% excluded_thresholds1)
+
+
+# Function to create analysis plots
+create_analysis_plots <- function(data, type_label) {
+  # Create summary statistics by threshold
+  threshold_summary <- data %>%
+    group_by(Threshold, Image) %>%
+    summarize(
+      Particle_Count = n(),
+      Mean_Area = mean(Area),
+      Median_Area = median(Area),
+      SD_Area = sd(Area),
+      Total_Area = sum(Area),
+      .groups = 'drop'
+    )
+  
+  # Calculate overall statistics for each threshold
+  overall_summary <- threshold_summary %>%
+    group_by(Threshold) %>%
+    summarize(
+      Mean_Particle_Count = mean(Particle_Count),
+      SD_Particle_Count = sd(Particle_Count),
+      Mean_Total_Area = mean(Total_Area),
+      SD_Total_Area = sd(Total_Area),
+      N_Images = n(),
+      .groups = 'drop'
+    )
+  
+  # Create plots
+  p1 <- ggplot(threshold_summary, aes(x = Threshold, y = Particle_Count)) +
+    geom_point(alpha = 0.3, color = "blue") +
+    geom_smooth(method = "loess", color = "red") +
+    theme_minimal() +
+    labs(title = paste(type_label, "- Particle Count vs Threshold"),
+         subtitle = "Each point represents one image",
+         y = "Number of Particles",
+         x = "Threshold Value")
+  
+  p2 <- ggplot(threshold_summary, aes(x = factor(Threshold), y = Particle_Count)) +
+    geom_boxplot(fill = "lightblue") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45)) +
+    labs(title = paste(type_label, "- Distribution of Particle Counts"),
+         x = "Threshold Value",
+         y = "Number of Particles")
+  
+  p3 <- ggplot(threshold_summary, aes(x = Threshold, y = Mean_Area)) +
+    geom_point(alpha = 0.3, color = "green") +
+    geom_smooth(method = "loess", color = "red") +
+    theme_minimal() +
+    labs(title = paste(type_label, "- Mean Particle Area vs Threshold"),
+         y = "Mean Particle Area",
+         x = "Threshold Value")
+  
+  p4 <- ggplot(threshold_summary, aes(x = Threshold, y = Total_Area)) +
+    geom_point(alpha = 0.3, color = "purple") +
+    geom_smooth(method = "loess", color = "red") +
+    theme_minimal() +
+    labs(title = paste(type_label, "- Total Particle Area vs Threshold"),
+         y = "Total Area",
+         x = "Threshold Value")
+  
+  # Calculate CV
+  cv_analysis <- threshold_summary %>%
+    group_by(Threshold) %>%
+    summarize(
+      CV_Particle_Count = sd(Particle_Count) / mean(Particle_Count) * 100,
+      CV_Total_Area = sd(Total_Area) / mean(Total_Area) * 100,
+      .groups = 'drop'
+    )
+  
+  p5 <- ggplot(cv_analysis, aes(x = Threshold)) +
+    geom_line(aes(y = CV_Particle_Count, color = "Particle Count"), size = 1) +
+    geom_line(aes(y = CV_Total_Area, color = "Total Area"), size = 1) +
+    theme_minimal() +
+    labs(title = paste(type_label, "- Coefficient of Variation vs Threshold"),
+         y = "Coefficient of Variation (%)",
+         x = "Threshold Value",
+         color = "Measure") +
+    scale_color_manual(values = c("Particle Count" = "blue", "Total Area" = "red"))
+  
+  # Calculate stability scores
+  stability_score <- cv_analysis %>%
+    mutate(
+      Normalized_CV_Particle = scale(CV_Particle_Count),
+      Normalized_CV_Area = scale(CV_Total_Area),
+      Stability_Score = -1 * (Normalized_CV_Particle + Normalized_CV_Area) / 2
+    ) %>%
+    arrange(desc(Stability_Score))
+  
+  # Get top thresholds
+  top_thresholds <- head(stability_score$Threshold, 3)
+  
+  p6 <- ggplot(data %>% filter(Threshold %in% top_thresholds),
+               aes(x = Area, fill = factor(Threshold))) +
+    geom_histogram(position = "dodge", bins = 30, alpha = 0.7) +
+    scale_x_log10() +
+    theme_minimal() +
+    labs(title = paste(type_label, "- Particle Area Distribution for Top 3 Thresholds"),
+         x = "Particle Area (log scale)",
+         y = "Count",
+         fill = "Threshold")
+  
+  p7 <- data %>%
+    filter(Threshold %in% top_thresholds) %>%
+    group_by(Threshold) %>%
+    arrange(Area) %>%
+    select(Area, Threshold) %>%
+    group_by(Threshold) %>%
+    mutate(
+      Count_Greater = n() - row_number() + 1
+    ) %>%
+    ggplot(aes(x = Area, y = Count_Greater, color = factor(Threshold))) +
+    geom_line(size = 1) +
+    scale_x_log10() +
+    theme_minimal() +
+    labs(title = paste(type_label, "- Particles Greater Than X Area"),
+         subtitle = "For top 3 recommended thresholds",
+         x = "Area (log scale)",
+         y = "Number of Particles",
+         color = "Threshold") +
+    scale_color_brewer(palette = "Set1") +
+    theme(legend.position = "bottom")
+  
+  # Return list of plots and analysis
+  return(list(
+    plots = list(p1, p2, p3, p4, p5, p6, p7),
+    stability_score = stability_score,
+    overall_summary = overall_summary
+  ))
+}
+```
+
+# Calibration Images Analysis
+```{r calibration_analysis}
+calibration_results <- create_analysis_plots(
+  calibration_data, 
+  "Calibration"
+)
+
+# Display plots
+for(plot in calibration_results$plots) {
+  print(plot)
+}
+
+# Print recommended thresholds
+cat("\nRecommended thresholds for Calibration images:\n")
+print(head(calibration_results$stability_score %>% 
+        select(Threshold, Stability_Score), 5))
+```
+
+# Edge Images Analysis
+```{r edge_analysis}
+edge_results <- create_analysis_plots(
+  edge_data, 
+  "Edge"
+)
+
+# Display plots
+for(plot in edge_results$plots) {
+  print(plot)
+}
+
+# Print recommended thresholds
+cat("\nRecommended thresholds for Edge images:\n")
+print(head(edge_results$stability_score %>% 
+        select(Threshold, Stability_Score), 5))
+```
+
+# Surface Images Analysis - Before Treatment
+```{r surface_before_analysis}
+surface_before_data <- surface_data %>% 
+  filter(Treatment == "Before")
+
+surface_before_results <- create_analysis_plots(
+  surface_before_data, 
+  "Surface Before Treatment"
+)
+
+# Display plots
+for(plot in surface_before_results$plots) {
+  print(plot)
+}
+
+# Print recommended thresholds
+cat("\nRecommended thresholds for Surface Before Treatment images:\n")
+print(head(surface_before_results$stability_score %>% 
+        select(Threshold, Stability_Score), 5))
+```
+
+# Surface Images Analysis - After Treatment
+```{r surface_after_analysis}
+surface_after_data <- surface_data %>% 
+  filter(Treatment == "After")
+
+surface_after_results <- create_analysis_plots(
+  surface_after_data, 
+  "Surface After Treatment"
+)
+
+# Display plots
+for(plot in surface_after_results$plots) {
+  print(plot)
+}
+
+# Print recommended thresholds
+cat("\nRecommended thresholds for Surface After Treatment images:\n")
+print(head(surface_after_results$stability_score %>% 
+        select(Threshold, Stability_Score), 5))
+```
+
+# Surface Treatment Comparison
+```{r surface_comparison}
+# Compare particle counts between before and after
+ggplot(surface_data %>%
+       group_by(Treatment, Threshold) %>%
+       summarize(Mean_Particles = n() / n_distinct(Image), .groups = 'drop'),
+       aes(x = Threshold, y = Mean_Particles, color = Treatment)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Average Particle Count Comparison - Before vs After Treatment",
+       y = "Mean Particles per Image",
+       x = "Threshold Value")
+
+# Compare mean particle areas
+ggplot(surface_data %>%
+       group_by(Treatment, Threshold) %>%
+       summarize(Mean_Area = mean(Area), .groups = 'drop'),
+       aes(x = Threshold, y = Mean_Area, color = Treatment)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Mean Particle Area Comparison - Before vs After Treatment",
+       y = "Mean Particle Area",
+       x = "Threshold Value")
+
+# Compare stability scores
+bind_rows(
+  surface_before_results$stability_score %>% mutate(Treatment = "Before"),
+  surface_after_results$stability_score %>% mutate(Treatment = "After")
+) %>%
+  ggplot(aes(x = Threshold, y = Stability_Score, color = Treatment)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Stability Score Comparison - Before vs After Treatment",
+       y = "Stability Score",
+       x = "Threshold Value")
+
+# Calculate percent change in particles
+percent_change <- surface_data %>%
+  group_by(Threshold, Treatment) %>%
+  summarize(
+    Particles = n(),
+    Mean_Area = mean(Area),
+    .groups = 'drop'
+  ) %>%
+  pivot_wider(
+    names_from = Treatment,
+    values_from = c(Particles, Mean_Area)
+  ) %>%
+  mutate(
+    Particle_Change = (Particles_After - Particles_Before) / Particles_Before * 100,
+    Area_Change = (Mean_Area_After - Mean_Area_Before) / Mean_Area_Before * 100
+  )
+
+# Plot percent changes
+ggplot(percent_change, aes(x = Threshold)) +
+  geom_line(aes(y = Particle_Change, color = "Particle Count")) +
+  geom_line(aes(y = Area_Change, color = "Mean Area")) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "Percent Change After Treatment",
+       y = "Percent Change (%)",
+       x = "Threshold Value",
+       color = "Measure")
+```
+
+# Summary of Optimal Thresholds
+```{r threshold_summary}
+# Create summary table of top thresholds for each type
+threshold_summary <- bind_rows(
+  calibration_results$stability_score %>% 
+    slice_head(n = 3) %>% 
+    mutate(Type = "Calibration"),
+  edge_results$stability_score %>% 
+    slice_head(n = 3) %>% 
+    mutate(Type = "Edge"),
+  surface_before_results$stability_score %>% 
+    slice_head(n = 3) %>% 
+    mutate(Type = "Surface Before"),
+  surface_after_results$stability_score %>% 
+    slice_head(n = 3) %>% 
+    mutate(Type = "Surface After")
+) %>%
+  select(Type, Threshold, Stability_Score) %>%
+  arrange(Type, desc(Stability_Score))
+
+# Print summary table
+knitr::kable(threshold_summary, 
+             caption = "Top 3 Recommended Thresholds by Image Type",
+             digits = 3)
+```
+
+
+# Comprehensive Comparison Across All Image Types
+```{r comprehensive_comparison}
+# Add comparative plots comparing all image types
+
+# 1. Particle Count Comparison
+ggplot(all_data %>%
+       group_by(Type, Threshold) %>%
+       summarize(Mean_Particles = n() / n_distinct(Image), .groups = 'drop'),
+       aes(x = Threshold, y = Mean_Particles, color = Type)) +
+  geom_line() +
+  geom_point(size = 2, alpha = 0.6) +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom") +
+  labs(title = "Average Particle Count Comparison Across All Image Types",
+       y = "Mean Particles per Image",
+       x = "Threshold Value")
+
+# 2. Mean Particle Area Comparison
+ggplot(all_data %>%
+       group_by(Type, Threshold) %>%
+       summarize(Mean_Area = mean(Area), .groups = 'drop'),
+       aes(x = Threshold, y = Mean_Area, color = Type)) +
+  geom_line() +
+  geom_point(size = 2, alpha = 0.6) +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom") +
+  labs(title = "Mean Particle Area Comparison Across All Image Types",
+       y = "Mean Particle Area",
+       x = "Threshold Value")
+
+# 3. Total Area Coverage Comparison
+ggplot(all_data %>%
+       group_by(Type, Threshold, Image) %>%
+       summarize(Total_Area = sum(Area), .groups = 'drop') %>%
+       group_by(Type, Threshold) %>%
+       summarize(Mean_Total_Area = mean(Total_Area), .groups = 'drop'),
+       aes(x = Threshold, y = Mean_Total_Area, color = Type)) +
+  geom_line() +
+  geom_point(size = 2, alpha = 0.6) +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom") +
+  labs(title = "Mean Total Area Coverage Comparison",
+       y = "Mean Total Area per Image",
+       x = "Threshold Value")
+
+# 4. Coefficient of Variation Comparison
+cv_comparison <- all_data %>%
+  group_by(Type, Threshold, Image) %>%
+  summarize(
+    Particle_Count = n(),
+    Total_Area = sum(Area),
+    .groups = 'drop'
+  ) %>%
+  group_by(Type, Threshold) %>%
+  summarize(
+    CV_Particle_Count = sd(Particle_Count) / mean(Particle_Count) * 100,
+    CV_Total_Area = sd(Total_Area) / mean(Total_Area) * 100,
+    .groups = 'drop'
+  )
+
+# Plot CV comparison for particle counts
+ggplot(cv_comparison, aes(x = Threshold, y = CV_Particle_Count, color = Type)) +
+  geom_line() +
+  geom_point(size = 2, alpha = 0.6) +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom") +
+  labs(title = "Coefficient of Variation Comparison - Particle Counts",
+       y = "CV of Particle Count (%)",
+       x = "Threshold Value")
+
+# 5. Particle Size Distribution Comparison
+# Select a common threshold for comparison (use median threshold)
+median_threshold <- median(unique(all_data$Threshold))
+
+ggplot(all_data %>% 
+       filter(Threshold == median_threshold),
+       aes(x = Area, fill = Type)) +
+  geom_density(alpha = 0.5) +
+  scale_x_log10() +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set1") +
+  theme(legend.position = "bottom") +
+  labs(title = paste("Particle Size Distribution Comparison at Threshold", median_threshold),
+       x = "Particle Area (log scale)",
+       y = "Density")
+
+# 6. Stability Score Comparison
+stability_comparison <- bind_rows(
+  calibration_results$stability_score %>% mutate(Type = "Calibration"),
+  edge_results$stability_score %>% mutate(Type = "Edge"),
+  surface_before_results$stability_score %>% mutate(Type = "Surface Before"),
+  surface_after_results$stability_score %>% mutate(Type = "Surface After")
+)
+
+ggplot(stability_comparison, aes(x = Threshold, y = Stability_Score, color = Type)) +
+  geom_line() +
+  geom_point(size = 2, alpha = 0.6) +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position = "bottom") +
+  labs(title = "Stability Score Comparison Across All Image Types",
+       y = "Stability Score",
+       x = "Threshold Value")
+
+# 7. Summary Statistics Table
+summary_stats <- all_data %>%
+  group_by(Type, Threshold) %>%
+  summarize(
+    Mean_Particles = n() / n_distinct(Image),
+    Mean_Area = mean(Area),
+    Median_Area = median(Area),
+    Total_Area = sum(Area) / n_distinct(Image),
+    N_Images = n_distinct(Image),
+    .groups = 'drop'
+  )
+
+# Find optimal threshold for each type based on stability score
+optimal_thresholds <- stability_comparison %>%
+  group_by(Type) %>%
+  slice_max(order_by = Stability_Score, n = 1) %>%
+  select(Type, Optimal_Threshold = Threshold, Stability_Score)
+
+# Create summary table for optimal thresholds
+optimal_summary <- summary_stats %>%
+  inner_join(optimal_thresholds, by = c("Type", "Threshold" = "Optimal_Threshold")) %>%
+  select(Type, Threshold, Mean_Particles, Mean_Area, Total_Area, Stability_Score) %>%
+  arrange(Type)
+
+# Print summary table
+knitr::kable(optimal_summary, 
+             caption = "Summary Statistics at Optimal Thresholds",
+             digits = 2)
+
+
+```
+
+# Key Findings Summary
+```{r key_findings}
+# Calculate key metrics for comparison
+key_metrics <- all_data %>%
+  group_by(Type) %>%
+  summarize(
+    Total_Images = n_distinct(Image),
+    Total_Particles = n(),
+    Mean_Particles_per_Image = n() / n_distinct(Image),
+    Mean_Particle_Area = mean(Area),
+    Median_Particle_Area = median(Area),
+    Total_Area_Coverage = sum(Area) / n_distinct(Image),
+    .groups = 'drop'
+  )
+
+# Print key findings table
+knitr::kable(key_metrics, 
+             caption = "Key Metrics Across Image Types",
+             digits = 2)
+
+# Calculate correlations between different image types
+correlation_data <- all_data %>%
+  group_by(Type, Threshold) %>%
+  summarize(
+    Mean_Particles = n() / n_distinct(Image),
+    Mean_Area = mean(Area),
+    .groups = 'drop'
+  ) %>%
+  pivot_wider(
+    names_from = Type,
+    values_from = c(Mean_Particles, Mean_Area)
+  )
+
+# Print correlation summary
+cat("\nCorrelations between image types (based on particle counts):\n")
+cor_matrix <- cor(correlation_data %>% select(starts_with("Mean_Particles")))
+knitr::kable(cor_matrix, digits = 3)
+```

@@ -1,0 +1,1513 @@
+---
+title: "Findings and Process"
+author: "Brandon Titensor"
+date: "2024-06-13"
+output: pdf_document
+---
+
+# The Findings and Processes through which Analysis Occured
+
+## The Data
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+library(tidymodels) 
+library(tidyverse)
+library(vroom) 
+library(randomForest)
+library(doParallel)
+library(lightgbm)
+library(themis)
+library(bonsai)
+library(bestNormalize)
+library(embed)
+library(pROC)
+library(car)
+library(corrplot) 
+library(readr)
+library(reshape2)
+library(ggplot2)
+```
+
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+Particles_AftTr1Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa1Surf/Particles_AftTr1Sa1Surf.csv")
+Particles_AftTr1Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa2Surf/Particles_AftTr1Sa2Surf.csv")
+Particles_AftTr1Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa3Surf/Particles_AftTr1Sa3Surf.csv")
+Particles_AftTr1Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa4Surf/Particles_AftTr1Sa4Surf.csv")
+Particles_AftTr1Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa5Surf/Particles_AftTr1Sa5Surf.csv")
+
+Particles_AftTr2Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa1Surf/Particles_AftTr2Sa1Surf.csv")
+Particles_AftTr2Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa2Surf/Particles_AftTr2Sa2Surf.csv")
+Particles_AftTr2Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa3Surf/Particles_AftTr2Sa3Surf.csv")
+Particles_AftTr2Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa4Surf/Particles_AftTr2Sa4Surf.csv")
+Particles_AftTr2Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa5Surf/Particles_AftTr2Sa5Surf.csv")
+
+Particles_AftTr3Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa1Surf/Particles_AftTr3Sa1Surf.csv")
+Particles_AftTr3Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa2Surf/Particles_AftTr3Sa2Surf.csv")
+Particles_AftTr3Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa3Surf/Particles_AftTr3Sa3Surf.csv")
+Particles_AftTr3Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa4Surf/Particles_AftTr3Sa4Surf.csv")
+Particles_AftTr3Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa5Surf/Particles_AftTr3Sa5Surf.csv")
+
+Particles_BefTr1Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa1Surf/Particles_BefTr1Sa1Surf.csv")
+Particles_BefTr1Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa2Surf/Particles_BefTr1Sa2Surf.csv")
+Particles_BefTr1Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa3Surf/Particles_BefTr1Sa3Surf.csv")
+Particles_BefTr1Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa4Surf/Particles_BefTr1Sa4Surf.csv")
+Particles_BefTr1Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa5Surf/Particles_BefTr1Sa5Surf.csv")
+
+Particles_BefTr2Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa1Surf/Particles_BefTr2Sa1Surf.csv")
+Particles_BefTr2Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa2Surf/Particles_BefTr2Sa2Surf.csv")
+Particles_BefTr2Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa3Surf/Particles_BefTr2Sa3Surf.csv")
+Particles_BefTr2Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa4Surf/Particles_BefTr2Sa4Surf.csv")
+Particles_BefTr2Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa5Surf/Particles_BefTr2Sa5Surf.csv")
+
+Particles_BefTr3Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa1Surf/Particles_BefTr3Sa1Surf.csv")
+Particles_BefTr3Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa2Surf/Particles_BefTr3Sa2Surf.csv")
+Particles_BefTr3Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa3Surf/Particles_BefTr3Sa3Surf.csv")
+Particles_BefTr3Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa4Surf/Particles_BefTr3Sa4Surf.csv")
+Particles_BefTr3Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa5Surf/Particles_BefTr3Sa5Surf.csv")
+
+Particles_BefTr4Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa1Surf/Particles_BefTr4Sa1Surf.csv")
+Particles_BefTr4Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa2Surf/Particles_BefTr4Sa2Surf.csv")
+Particles_BefTr4Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa3Surf/Particles_BefTr4Sa3Surf.csv")
+Particles_BefTr4Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa4Surf/Particles_BefTr4Sa4Surf.csv")
+Particles_BefTr4Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa5Surf/Particles_BefTr4Sa5Surf.csv")
+
+
+# 
+# Particles_AftTr1Sa1Surf_subset <- ifelse(Particles_AftTr1Sa1Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr1Sa2Surf_subset <- ifelse(Particles_AftTr1Sa2Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr1Sa3Surf_subset <- ifelse(Particles_AftTr1Sa3Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr1Sa4Surf_subset <- ifelse(Particles_AftTr1Sa4Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr1Sa5Surf_subset <- ifelse(Particles_AftTr1Sa5Surf$Area < (((1)/2)^2*pi), "out", "in")
+# 
+# Particles_AftTr2Sa1Surf_subset <- ifelse(Particles_AftTr2Sa1Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr2Sa2Surf_subset <- ifelse(Particles_AftTr2Sa2Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr2Sa3Surf_subset <- ifelse(Particles_AftTr2Sa3Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr2Sa4Surf_subset <- ifelse(Particles_AftTr2Sa4Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr2Sa5Surf_subset <- ifelse(Particles_AftTr2Sa5Surf$Area < (((1)/2)^2*pi), "out", "in")
+# 
+# Particles_AftTr3Sa1Surf_subset <- ifelse(Particles_AftTr3Sa1Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr3Sa2Surf_subset <- ifelse(Particles_AftTr3Sa2Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr3Sa3Surf_subset <- ifelse(Particles_AftTr3Sa3Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr3Sa4Surf_subset <- ifelse(Particles_AftTr3Sa4Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_AftTr3Sa5Surf_subset <- ifelse(Particles_AftTr3Sa5Surf$Area < (((1)/2)^2*pi), "out", "in")
+# 
+# Particles_BefTr1Sa1Surf_subset <- ifelse(Particles_BefTr1Sa1Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr1Sa2Surf_subset <- ifelse(Particles_BefTr1Sa2Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr1Sa3Surf_subset <- ifelse(Particles_BefTr1Sa3Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr1Sa4Surf_subset <- ifelse(Particles_BefTr1Sa4Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr1Sa5Surf_subset <- ifelse(Particles_BefTr1Sa5Surf$Area < (((1)/2)^2*pi), "out", "in")
+# 
+# Particles_BefTr2Sa1Surf_subset <- ifelse(Particles_BefTr2Sa1Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr2Sa2Surf_subset <- ifelse(Particles_BefTr2Sa2Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr2Sa3Surf_subset <- ifelse(Particles_BefTr2Sa3Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr2Sa4Surf_subset <- ifelse(Particles_BefTr2Sa4Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr2Sa5Surf_subset <- ifelse(Particles_BefTr2Sa5Surf$Area < (((1)/2)^2*pi), "out", "in")
+# 
+# Particles_BefTr3Sa1Surf_subset <- ifelse(Particles_BefTr3Sa1Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr3Sa2Surf_subset <- ifelse(Particles_BefTr3Sa2Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr3Sa3Surf_subset <- ifelse(Particles_BefTr3Sa3Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr3Sa4Surf_subset <- ifelse(Particles_BefTr3Sa4Surf$Area < (((1)/2)^2*pi), "out", "in")
+# Particles_BefTr3Sa5Surf_subset <- ifelse(Particles_BefTr3Sa5Surf$Area < (((1)/2)^2*pi), "out", "in")
+# 
+# in_out_after1_tr1 <- Particles_AftTr1Sa1Surf_subset == "in"
+# in_out_after2_tr1 <- Particles_AftTr1Sa2Surf_subset == "in"
+# in_out_after3_tr1 <- Particles_AftTr1Sa3Surf_subset == "in"
+# in_out_after4_tr1 <- Particles_AftTr1Sa4Surf_subset == "in"
+# in_out_after5_tr1 <- Particles_AftTr1Sa5Surf_subset == "in"
+# 
+# in_out_after1_tr2 <- Particles_AftTr2Sa1Surf_subset == "in"
+# in_out_after2_tr2 <- Particles_AftTr2Sa2Surf_subset == "in"
+# in_out_after3_tr2 <- Particles_AftTr2Sa3Surf_subset == "in"
+# in_out_after4_tr2 <- Particles_AftTr2Sa4Surf_subset == "in"
+# in_out_after5_tr2 <- Particles_AftTr2Sa5Surf_subset == "in"
+# 
+# in_out_after1_tr3 <- Particles_AftTr3Sa1Surf_subset == "in"
+# in_out_after2_tr3 <- Particles_AftTr3Sa2Surf_subset == "in"
+# in_out_after3_tr3 <- Particles_AftTr3Sa3Surf_subset == "in"
+# in_out_after4_tr3 <- Particles_AftTr3Sa4Surf_subset == "in"
+# in_out_after5_tr3 <- Particles_AftTr3Sa5Surf_subset == "in"
+# 
+# in_out_before1_tr1 <- Particles_BefTr1Sa1Surf_subset == "in"
+# in_out_before2_tr1 <- Particles_BefTr1Sa2Surf_subset == "in"
+# in_out_before3_tr1 <- Particles_BefTr1Sa3Surf_subset == "in"
+# in_out_before4_tr1 <- Particles_BefTr1Sa4Surf_subset == "in"
+# in_out_before5_tr1 <- Particles_BefTr1Sa5Surf_subset == "in"
+# 
+# in_out_before1_tr2 <- Particles_BefTr2Sa1Surf_subset == "in"
+# in_out_before2_tr2 <- Particles_BefTr2Sa2Surf_subset == "in"
+# in_out_before3_tr2 <- Particles_BefTr2Sa3Surf_subset == "in"
+# in_out_before4_tr2 <- Particles_BefTr2Sa4Surf_subset == "in"
+# in_out_before5_tr2 <- Particles_BefTr2Sa5Surf_subset == "in"
+# 
+# in_out_before1_tr3 <- Particles_BefTr3Sa1Surf_subset == "in"
+# in_out_before2_tr3 <- Particles_BefTr3Sa2Surf_subset == "in"
+# in_out_before3_tr3 <- Particles_BefTr3Sa3Surf_subset == "in"
+# in_out_before4_tr3 <- Particles_BefTr3Sa4Surf_subset == "in"
+# in_out_before5_tr3 <- Particles_BefTr3Sa5Surf_subset == "in"
+# 
+# Particles_AftTr1Sa1Surf  <- Particles_AftTr1Sa1Surf[in_out_after1_tr1 == "TRUE",]
+# Particles_AftTr1Sa2Surf  <- Particles_AftTr1Sa2Surf[in_out_after2_tr1 == "TRUE",]
+# Particles_AftTr1Sa3Surf  <- Particles_AftTr1Sa3Surf[in_out_after3_tr1 == "TRUE",]
+# Particles_AftTr1Sa4Surf  <- Particles_AftTr1Sa4Surf[in_out_after4_tr1 == "TRUE",]
+# Particles_AftTr1Sa5Surf  <- Particles_AftTr1Sa5Surf[in_out_after5_tr1 == "TRUE",]
+# 
+# Particles_AftTr2Sa1Surf  <- Particles_AftTr2Sa1Surf[in_out_after1_tr2 == "TRUE",]
+# Particles_AftTr2Sa2Surf  <- Particles_AftTr2Sa2Surf[in_out_after2_tr2 == "TRUE",]
+# Particles_AftTr2Sa3Surf  <- Particles_AftTr2Sa3Surf[in_out_after3_tr2 == "TRUE",]
+# Particles_AftTr2Sa4Surf  <- Particles_AftTr2Sa4Surf[in_out_after4_tr2 == "TRUE",]
+# Particles_AftTr2Sa5Surf  <- Particles_AftTr2Sa5Surf[in_out_after5_tr2 == "TRUE",]
+# 
+# Particles_AftTr3Sa1Surf  <- Particles_AftTr3Sa1Surf[in_out_after1_tr3 == "TRUE",]
+# Particles_AftTr3Sa2Surf  <- Particles_AftTr3Sa2Surf[in_out_after2_tr3 == "TRUE",]
+# Particles_AftTr3Sa3Surf  <- Particles_AftTr3Sa3Surf[in_out_after3_tr3 == "TRUE",]
+# Particles_AftTr3Sa4Surf  <- Particles_AftTr3Sa4Surf[in_out_after4_tr3 == "TRUE",]
+# Particles_AftTr3Sa5Surf  <- Particles_AftTr3Sa5Surf[in_out_after5_tr3 == "TRUE",]
+# 
+# Particles_BefTr1Sa1Surf  <- Particles_BefTr1Sa1Surf[in_out_before1_tr1 == "TRUE",]
+# Particles_BefTr1Sa2Surf  <- Particles_BefTr1Sa2Surf[in_out_before2_tr1 == "TRUE",]
+# Particles_BefTr1Sa3Surf  <- Particles_BefTr1Sa3Surf[in_out_before3_tr1 == "TRUE",]
+# Particles_BefTr1Sa4Surf  <- Particles_BefTr1Sa4Surf[in_out_before4_tr1 == "TRUE",]
+# Particles_BefTr1Sa5Surf  <- Particles_BefTr1Sa5Surf[in_out_before5_tr1 == "TRUE",]
+# 
+# Particles_BefTr2Sa1Surf  <- Particles_BefTr2Sa1Surf[in_out_before1_tr2 == "TRUE",]
+# Particles_BefTr2Sa2Surf  <- Particles_BefTr2Sa2Surf[in_out_before2_tr2 == "TRUE",]
+# Particles_BefTr2Sa3Surf  <- Particles_BefTr2Sa3Surf[in_out_before3_tr2 == "TRUE",]
+# Particles_BefTr2Sa4Surf  <- Particles_BefTr2Sa4Surf[in_out_before4_tr2 == "TRUE",]
+# Particles_BefTr2Sa5Surf  <- Particles_BefTr2Sa5Surf[in_out_before5_tr2 == "TRUE",]
+# 
+# Particles_BefTr3Sa1Surf  <- Particles_BefTr3Sa1Surf[in_out_before1_tr3 == "TRUE",]
+# Particles_BefTr3Sa2Surf  <- Particles_BefTr3Sa2Surf[in_out_before2_tr3 == "TRUE",]
+# Particles_BefTr3Sa3Surf  <- Particles_BefTr3Sa3Surf[in_out_before3_tr3 == "TRUE",]
+# Particles_BefTr3Sa4Surf  <- Particles_BefTr3Sa4Surf[in_out_before4_tr3 == "TRUE",]
+# Particles_BefTr3Sa5Surf  <- Particles_BefTr3Sa5Surf[in_out_before5_tr3 == "TRUE",]
+
+
+Particles_AftTr1Sa1Surf  <- Particles_AftTr1Sa1Surf[,-c(1,15,16)]
+Particles_AftTr1Sa2Surf  <- Particles_AftTr1Sa2Surf[,-c(1,15,16)]
+Particles_AftTr1Sa3Surf  <- Particles_AftTr1Sa3Surf[,-c(1,15,16)]
+Particles_AftTr1Sa4Surf  <- Particles_AftTr1Sa4Surf[,-c(1,15,16)]
+Particles_AftTr1Sa5Surf  <- Particles_AftTr1Sa5Surf[,-c(1,15,16)]
+
+Particles_AftTr2Sa1Surf  <- Particles_AftTr2Sa1Surf[,-c(1,15,16)]
+Particles_AftTr2Sa2Surf  <- Particles_AftTr2Sa2Surf[,-c(1,15,16)]
+Particles_AftTr2Sa3Surf  <- Particles_AftTr2Sa3Surf[,-c(1,15,16)]
+Particles_AftTr2Sa4Surf  <- Particles_AftTr2Sa4Surf[,-c(1,15,16)]
+Particles_AftTr2Sa5Surf  <- Particles_AftTr2Sa5Surf[,-c(1,15,16)]
+
+Particles_AftTr3Sa1Surf  <- Particles_AftTr3Sa1Surf[,-c(1,15,16)]
+Particles_AftTr3Sa2Surf  <- Particles_AftTr3Sa2Surf[,-c(1,15,16)]
+Particles_AftTr3Sa3Surf  <- Particles_AftTr3Sa3Surf[,-c(1,15,16)]
+Particles_AftTr3Sa4Surf  <- Particles_AftTr3Sa4Surf[,-c(1,15,16)]
+Particles_AftTr3Sa5Surf  <- Particles_AftTr3Sa5Surf[,-c(1,15,16)]
+
+Particles_BefTr1Sa1Surf  <- Particles_BefTr1Sa1Surf[,-c(1,15,16)]
+Particles_BefTr1Sa2Surf  <- Particles_BefTr1Sa2Surf[,-c(1,15,16)]
+Particles_BefTr1Sa3Surf  <- Particles_BefTr1Sa3Surf[,-c(1,15,16)]
+Particles_BefTr1Sa4Surf  <- Particles_BefTr1Sa4Surf[,-c(1,15,16)]
+Particles_BefTr1Sa5Surf  <- Particles_BefTr1Sa5Surf[,-c(1,15,16)]
+
+Particles_BefTr2Sa1Surf  <- Particles_BefTr2Sa1Surf[,-c(1,15,16)]
+Particles_BefTr2Sa2Surf  <- Particles_BefTr2Sa2Surf[,-c(1,15,16)]
+Particles_BefTr2Sa3Surf  <- Particles_BefTr2Sa3Surf[,-c(1,15,16)]
+Particles_BefTr2Sa4Surf  <- Particles_BefTr2Sa4Surf[,-c(1,15,16)]
+Particles_BefTr2Sa5Surf  <- Particles_BefTr2Sa5Surf[,-c(1,15,16)]
+
+Particles_BefTr3Sa1Surf  <- Particles_BefTr3Sa1Surf[,-c(1,15,16)]
+Particles_BefTr3Sa2Surf  <- Particles_BefTr3Sa2Surf[,-c(1,15,16)]
+Particles_BefTr3Sa3Surf  <- Particles_BefTr3Sa3Surf[,-c(1,15,16)]
+Particles_BefTr3Sa4Surf  <- Particles_BefTr3Sa4Surf[,-c(1,15,16)]
+Particles_BefTr3Sa5Surf  <- Particles_BefTr3Sa5Surf[,-c(1,15,16)]
+
+Particles_BefTr1Sa1Surf  <- Particles_BefTr4Sa1Surf[,-c(1,15,16)]
+Particles_BefTr1Sa2Surf  <- Particles_BefTr4Sa2Surf[,-c(1,15,16)]
+Particles_BefTr1Sa3Surf  <- Particles_BefTr4Sa3Surf[,-c(1,15,16)]
+Particles_BefTr1Sa4Surf  <- Particles_BefTr4Sa4Surf[,-c(1,15,16)]
+Particles_BefTr1Sa5Surf  <- Particles_BefTr4Sa5Surf[,-c(1,15,16)]
+
+
+Particles_BefTr1Sa1Surf$Diameter <- (sqrt(Particles_BefTr1Sa1Surf$Area/pi)*2)
+Particles_BefTr1Sa2Surf$Diameter <- (sqrt(Particles_BefTr1Sa2Surf$Area/pi)*2)
+Particles_BefTr1Sa3Surf$Diameter <- (sqrt(Particles_BefTr1Sa3Surf$Area/pi)*2)
+Particles_BefTr1Sa4Surf$Diameter <- (sqrt(Particles_BefTr1Sa4Surf$Area/pi)*2)
+Particles_BefTr1Sa5Surf$Diameter <- (sqrt(Particles_BefTr1Sa5Surf$Area/pi)*2)
+
+Particles_BefTr2Sa1Surf$Diameter <- (sqrt(Particles_BefTr2Sa1Surf$Area/pi)*2)
+Particles_BefTr2Sa2Surf$Diameter <- (sqrt(Particles_BefTr2Sa2Surf$Area/pi)*2)
+Particles_BefTr2Sa3Surf$Diameter <- (sqrt(Particles_BefTr2Sa3Surf$Area/pi)*2)
+Particles_BefTr2Sa4Surf$Diameter <- (sqrt(Particles_BefTr2Sa4Surf$Area/pi)*2)
+Particles_BefTr2Sa5Surf$Diameter <- (sqrt(Particles_BefTr2Sa5Surf$Area/pi)*2)
+
+Particles_BefTr3Sa1Surf$Diameter <- (sqrt(Particles_BefTr3Sa1Surf$Area/pi)*2)
+Particles_BefTr3Sa2Surf$Diameter <- (sqrt(Particles_BefTr3Sa2Surf$Area/pi)*2)
+Particles_BefTr3Sa3Surf$Diameter <- (sqrt(Particles_BefTr3Sa3Surf$Area/pi)*2)
+Particles_BefTr3Sa4Surf$Diameter <- (sqrt(Particles_BefTr3Sa4Surf$Area/pi)*2)
+Particles_BefTr3Sa5Surf$Diameter <- (sqrt(Particles_BefTr3Sa5Surf$Area/pi)*2)
+
+Particles_BefTr4Sa1Surf$Diameter <- (sqrt(Particles_BefTr4Sa1Surf$Area/pi)*2)
+Particles_BefTr4Sa2Surf$Diameter <- (sqrt(Particles_BefTr4Sa2Surf$Area/pi)*2)
+Particles_BefTr4Sa3Surf$Diameter <- (sqrt(Particles_BefTr4Sa3Surf$Area/pi)*2)
+Particles_BefTr4Sa4Surf$Diameter <- (sqrt(Particles_BefTr4Sa4Surf$Area/pi)*2)
+Particles_BefTr4Sa5Surf$Diameter <- (sqrt(Particles_BefTr4Sa5Surf$Area/pi)*2)
+
+Particles_AftTr1Sa1Surf$Diameter <- (sqrt(Particles_AftTr1Sa1Surf$Area/pi)*2)
+Particles_AftTr1Sa2Surf$Diameter <- (sqrt(Particles_AftTr1Sa2Surf$Area/pi)*2)
+Particles_AftTr1Sa3Surf$Diameter <- (sqrt(Particles_AftTr1Sa3Surf$Area/pi)*2)
+Particles_AftTr1Sa4Surf$Diameter <- (sqrt(Particles_AftTr1Sa4Surf$Area/pi)*2)
+Particles_AftTr1Sa5Surf$Diameter <- (sqrt(Particles_AftTr1Sa5Surf$Area/pi)*2)
+
+Particles_AftTr2Sa1Surf$Diameter <- (sqrt(Particles_AftTr2Sa1Surf$Area/pi)*2)
+Particles_AftTr2Sa2Surf$Diameter <- (sqrt(Particles_AftTr2Sa2Surf$Area/pi)*2)
+Particles_AftTr2Sa3Surf$Diameter <- (sqrt(Particles_AftTr2Sa3Surf$Area/pi)*2)
+Particles_AftTr2Sa4Surf$Diameter <- (sqrt(Particles_AftTr2Sa4Surf$Area/pi)*2)
+Particles_AftTr2Sa5Surf$Diameter <- (sqrt(Particles_AftTr2Sa5Surf$Area/pi)*2)
+
+Particles_AftTr3Sa1Surf$Diameter <- (sqrt(Particles_AftTr3Sa1Surf$Area/pi)*2)
+Particles_AftTr3Sa2Surf$Diameter <- (sqrt(Particles_AftTr3Sa2Surf$Area/pi)*2)
+Particles_AftTr3Sa3Surf$Diameter <- (sqrt(Particles_AftTr3Sa3Surf$Area/pi)*2)
+Particles_AftTr3Sa4Surf$Diameter <- (sqrt(Particles_AftTr3Sa4Surf$Area/pi)*2)
+Particles_AftTr3Sa5Surf$Diameter <- (sqrt(Particles_AftTr3Sa5Surf$Area/pi)*2)
+
+# combined_before <- rbind(Particles_BefTr1Sa1Surf,
+#                          Particles_BefTr1Sa2Surf,
+#                          Particles_BefTr1Sa3Surf,
+#                          Particles_BefTr1Sa4Surf,
+#                          Particles_BefTr1Sa5Surf,
+#                          Particles_BefTr2Sa1Surf,
+#                          Particles_BefTr2Sa2Surf,
+#                          Particles_BefTr2Sa3Surf,
+#                          Particles_BefTr2Sa4Surf,
+#                          Particles_BefTr2Sa5Surf,
+#                          Particles_BefTr3Sa1Surf,
+#                          Particles_BefTr3Sa2Surf,
+#                          Particles_BefTr3Sa3Surf,
+#                          Particles_BefTr3Sa4Surf,
+#                          Particles_BefTr3Sa5Surf)
+# 
+# combined_after <- rbind(Particles_AftTr1Sa1Surf,
+#                          Particles_AftTr1Sa2Surf,
+#                          Particles_AftTr1Sa3Surf,
+#                          Particles_AftTr1Sa4Surf,
+#                          Particles_AftTr1Sa5Surf,
+#                          Particles_AftTr2Sa1Surf,
+#                          Particles_AftTr2Sa2Surf,
+#                          Particles_AftTr2Sa3Surf,
+#                          Particles_AftTr2Sa4Surf,
+#                          Particles_AftTr2Sa5Surf,
+#                          Particles_AftTr3Sa1Surf,
+#                          Particles_AftTr3Sa2Surf,
+#                          Particles_AftTr3Sa3Surf,
+#                          Particles_AftTr3Sa4Surf,
+#                          Particles_AftTr3Sa5Surf)
+
+combined_before1 <- rbind(Particles_BefTr1Sa1Surf,
+                         Particles_BefTr1Sa2Surf,
+                         Particles_BefTr1Sa3Surf,
+                         Particles_BefTr1Sa4Surf,
+                         Particles_BefTr1Sa5Surf)
+
+combined_after1 <- rbind(Particles_AftTr1Sa1Surf,
+                         Particles_AftTr1Sa2Surf,
+                         Particles_AftTr1Sa3Surf,
+                         Particles_AftTr1Sa4Surf,
+                         Particles_AftTr1Sa5Surf)
+
+combined_before2 <- rbind(Particles_BefTr2Sa1Surf,
+                         Particles_BefTr2Sa2Surf,
+                         Particles_BefTr2Sa3Surf,
+                         Particles_BefTr2Sa4Surf,
+                         Particles_BefTr2Sa5Surf)
+
+combined_after2 <- rbind(Particles_AftTr2Sa1Surf,
+                         Particles_AftTr2Sa2Surf,
+                         Particles_AftTr2Sa3Surf,
+                         Particles_AftTr2Sa4Surf,
+                         Particles_AftTr2Sa5Surf)
+
+combined_before3 <- rbind(Particles_BefTr3Sa1Surf,
+                         Particles_BefTr3Sa2Surf,
+                         Particles_BefTr3Sa3Surf,
+                         Particles_BefTr3Sa4Surf,
+                         Particles_BefTr3Sa5Surf)
+
+combined_after3 <- rbind(Particles_AftTr3Sa1Surf,
+                         Particles_AftTr3Sa2Surf,
+                         Particles_AftTr3Sa3Surf,
+                         Particles_AftTr3Sa4Surf,
+                         Particles_AftTr3Sa5Surf)
+# 
+# Summary_AftTr1Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa1Surf/Summary_AftTr1Sa1Surf.csv")
+# Summary_AftTr1Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa2Surf/Summary_AftTr1Sa2Surf.csv")
+# Summary_AftTr1Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa3Surf/Summary_AftTr1Sa3Surf.csv")
+# Summary_AftTr1Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa4Surf/Summary_AftTr1Sa4Surf.csv")
+# Summary_AftTr1Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr1Sa5Surf/Summary_AftTr1Sa5Surf.csv")
+# 
+# Summary_AftTr2Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa1Surf/Summary_AftTr2Sa1Surf.csv")
+# Summary_AftTr2Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa2Surf/Summary_AftTr2Sa2Surf.csv")
+# Summary_AftTr2Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa3Surf/Summary_AftTr2Sa3Surf.csv")
+# Summary_AftTr2Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa4Surf/Summary_AftTr2Sa4Surf.csv")
+# Summary_AftTr2Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr2Sa5Surf/Summary_AftTr2Sa5Surf.csv")
+# 
+# Summary_AftTr3Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa1Surf/Summary_AftTr3Sa1Surf.csv")
+# Summary_AftTr3Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa2Surf/Summary_AftTr3Sa2Surf.csv")
+# Summary_AftTr3Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa3Surf/Summary_AftTr3Sa3Surf.csv")
+# Summary_AftTr3Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa4Surf/Summary_AftTr3Sa4Surf.csv")
+# Summary_AftTr3Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/AftTr3Sa5Surf/Summary_AftTr3Sa5Surf.csv")
+# 
+# Summary_BefTr1Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa1Surf/Summary_BefTr1Sa1Surf.csv")
+# Summary_BefTr1Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa2Surf/Summary_BefTr1Sa2Surf.csv")
+# Summary_BefTr1Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa3Surf/Summary_BefTr1Sa3Surf.csv")
+# Summary_BefTr1Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa4Surf/Summary_BefTr1Sa4Surf.csv")
+# Summary_BefTr1Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr1Sa5Surf/Summary_BefTr1Sa5Surf.csv")
+# 
+# Summary_BefTr2Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa1Surf/Summary_BefTr2Sa1Surf.csv")
+# Summary_BefTr2Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa2Surf/Summary_BefTr2Sa2Surf.csv")
+# Summary_BefTr2Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa3Surf/Summary_BefTr2Sa3Surf.csv")
+# Summary_BefTr2Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa4Surf/Summary_BefTr2Sa4Surf.csv")
+# Summary_BefTr2Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr2Sa5Surf/Summary_BefTr2Sa5Surf.csv")
+# 
+# Summary_BefTr3Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa1Surf/Summary_BefTr3Sa1Surf.csv")
+# Summary_BefTr3Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa2Surf/Summary_BefTr3Sa2Surf.csv")
+# Summary_BefTr3Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa3Surf/Summary_BefTr3Sa3Surf.csv")
+# Summary_BefTr3Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa4Surf/Summary_BefTr3Sa4Surf.csv")
+# Summary_BefTr3Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr3Sa5Surf/Summary_BefTr3Sa5Surf.csv")
+# 
+# Summary_BefTr4Sa1Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa1Surf/Summary_BefTr4Sa1Surf.csv")
+# Summary_BefTr4Sa2Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa2Surf/Summary_BefTr4Sa2Surf.csv")
+# Summary_BefTr4Sa3Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa3Surf/Summary_BefTr4Sa3Surf.csv")
+# Summary_BefTr4Sa4Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa4Surf/Summary_BefTr4Sa4Surf.csv")
+# Summary_BefTr4Sa5Surf <- read_csv("~/Desktop/College/Research/Trials/Surfaces/ImageJ Processed/BefTr4Sa5Surf/Summary_BefTr4Sa5Surf.csv")
+
+
+
+# combined_after$Diameter <- (sqrt(combined_after$Area/pi)*2)
+# combined_before$Diameter <- (sqrt(combined_before$Area/pi)*2)
+# 
+# combined_after1$Diameter <- (sqrt(combined_after1$Area/pi)*2)
+# combined_before1$Diameter <- (sqrt(combined_before1$Area/pi)*2)
+# 
+# combined_after2$Diameter <- (sqrt(combined_after2$Area/pi)*2)
+# combined_before2$Diameter <- (sqrt(combined_before2$Area/pi)*2)
+```
+
+
+To start we have our data we have data from two trials before and after images of five samples. Our first challenge was to discover a manner through which we could take the images of the sample and create a data set that accurately displayed what was a particle of dust on the surface and what was in fact an artifact of the image. 
+
+My first idea was to stitch all of the images together into one images made up of the 500 other images. Then I would analyze the picture for particles. The basic method that I chose to match particles on the before to the after images is in the code below. Basically it turned the variables into a string of numbers and searched the after data set for a similar string of numbers. When working with all of the variables there were no matches between the before and after images. This could be due to slightly different pictures being taken of the sample before vs after contamination. Including position, light intensity, and a variety of other factors.
+
+```{r, eval=FALSE,warning=FALSE,message=FALSE}
+## Slide 1 Observations ##
+ selected_vars <- c(5,9,13)
+
+# Find the new observations in the after file not taking into account the ID, XM, YM columns
+new_observations1 <- after_file1_sep[(!do.call(paste, after_file1_sep[, selected_vars]) 
+                                      %in% do.call(paste, before_file1_sep[, selected_vars])), ]
+old_observations1 <- after_file1_sep[(do.call(paste, after_file1_sep[, selected_vars]) 
+                                      %in% do.call(paste, before_file1_sep[, selected_vars])), ]
+
+# Add a new column "particle_type" to new_observations
+new_observations1$particle_type <- "dust"
+
+# Add a new column "particle_type" to old_observations
+old_observations1$particle_type <- "artifact"
+
+# Combine new_observations and old_observations into a single data frame
+combined_observations1 <- rbind(new_observations1, old_observations1)
+```
+ 
+ This led to the idea of perhaps finding specific variables to use to find matching particles. To evaluate the effectiveness of the different select variables I would compare the amount of matches to the amount of observations in the before image. It turned out to quite difficult to find a set of variables that would work for all samples in our data set. And with twenty variables the amount of combinations of variables was in the millions and with an estimated computation of 5 seconds for each iteration complettion of the code would take months to complete on a single computer. I chose to focuse on using combinations of the variables one through 3 for all twnety variables. The code through which this was attempeted is below.
+ 
+ 
+```{r, eval=FALSE,warning=FALSE,message=FALSE}
+# Define the column indices of the variables to consider
+variables <- c(1:20)
+
+# Get the total number of variables
+num_variables <- length(variables)
+
+# Initialize a data frame to store the variable combinations and ratios
+results <- data.frame(Variable_Combination = character(0),
+                      Ratio = numeric(0),
+                      stringsAsFactors = FALSE)
+
+# Iterate through all possible combinations of variables
+for (k in 1:3) {
+  combinations <- combn(variables, k)
+  num_combinations <- ncol(combinations)
+  
+  for (i in 1:num_combinations) {
+    selected_vars <- combinations[, i]
+    
+   # Calculate the ratio for the current variable combination
+    old_observations1 <- Particles_AftTr1Sa1Surf[(
+      do.call(paste, as.list(Particles_AftTr1Sa1Surf[, selected_vars])) %in%
+      do.call(paste, as.list(Particles_BefTr1Sa1Surf[, selected_vars]))), ]
+    old_observations2 <- Particles_AftTr1Sa2Surf[(
+    do.call(paste, as.list(Particles_AftTr1Sa2Surf[, selected_vars])) %in%
+    do.call(paste, as.list(Particles_BefTr1Sa2Surf[, selected_vars]))), ]
+    old_observations3 <- Particles_AftTr1Sa3Surf[(
+      do.call(paste, as.list(Particles_AftTr1Sa3Surf[, selected_vars])) %in% 
+      do.call(paste, as.list(Particles_BefTr1Sa3Surf[, selected_vars]))), ]
+    old_observations4 <- Particles_AftTr1Sa4Surf[(
+      do.call(paste, as.list(Particles_AftTr1Sa4Surf[, selected_vars])) %in%
+      do.call(paste, as.list(Particles_BefTr1Sa4Surf[, selected_vars]))), ]
+    old_observations5 <- Particles_AftTr1Sa5Surf[(
+      do.call(paste, as.list(Particles_AftTr1Sa5Surf[, selected_vars])) %in%
+      do.call(paste, as.list(Particles_BefTr1Sa5Surf[, selected_vars]))), ]
+    
+    old_observations6 <- Particles_AftTr2Sa1Surf[(
+      do.call(paste, as.list(Particles_AftTr2Sa1Surf[, selected_vars])) %in%
+      do.call(paste, as.list(Particles_BefTr2Sa1Surf[, selected_vars]))), ]
+    old_observations7 <- Particles_AftTr2Sa2Surf[(
+      do.call(paste, as.list(Particles_AftTr2Sa2Surf[, selected_vars])) %in%
+      do.call(paste, as.list(Particles_BefTr2Sa2Surf[, selected_vars]))), ]
+    old_observations8 <- Particles_AftTr2Sa3Surf[(
+      do.call(paste, as.list(Particles_AftTr2Sa3Surf[, selected_vars])) %in%
+      do.call(paste, as.list(Particles_BefTr2Sa3Surf[, selected_vars]))), ]
+    old_observations9 <- Particles_AftTr2Sa4Surf[(
+      do.call(paste, as.list(Particles_AftTr2Sa4Surf[, selected_vars])) %in%
+      do.call(paste, as.list(Particles_BefTr2Sa4Surf[, selected_vars]))), ]
+    old_observations10 <- Particles_AftTr2Sa5Surf[(
+      do.call(paste, as.list(Particles_AftTr2Sa5Surf[, selected_vars])) %in%
+      do.call(paste, as.list(Particles_BefTr2Sa5Surf[, selected_vars]))), ]
+
+    ratio1 <- nrow(old_observations1) / nrow(Particles_BefTr1Sa1Surf)
+    ratio2 <- nrow(old_observations2) / nrow(Particles_BefTr1Sa2Surf)
+    ratio3 <- nrow(old_observations3) / nrow(Particles_BefTr1Sa3Surf)
+    ratio4 <- nrow(old_observations4) / nrow(Particles_BefTr1Sa4Surf)
+    ratio5 <- nrow(old_observations5) / nrow(Particles_BefTr1Sa5Surf)
+    ratio6 <- nrow(old_observations6) / nrow(Particles_BefTr2Sa1Surf)
+    ratio7 <- nrow(old_observations7) / nrow(Particles_BefTr2Sa2Surf)
+    ratio8 <- nrow(old_observations8) / nrow(Particles_BefTr2Sa3Surf)
+    ratio9 <- nrow(old_observations9) / nrow(Particles_BefTr2Sa4Surf)
+    ratio10 <- nrow(old_observations10) / nrow(Particles_BefTr2Sa5Surf)
+    
+    # Create a string representation of the variable combination
+    var_combination <- paste(selected_vars, collapse = ", ")
+    
+    # Add the variable combination and ratio to the results data frame
+    results <- rbind(results, data.frame(Variable_Combination = var_combination,
+                                         #Ratio1 = ratio1,
+                                         #Ratio2 = ratio2,
+                                         Ratio3 = ratio3,
+                                         Ratio4 = ratio4,
+                                         Ratio5 = ratio5,
+                                         Ratio6 = ratio6,
+                                         Ratio7 = ratio7,
+                                         Ratio8 = ratio8,
+                                         Ratio9 = ratio9,
+                                         Ratio10 = ratio10,
+                                         stringsAsFactors = FALSE))
+  }
+}
+
+# Print the table of variable combinations and ratios
+print(results)
+
+results$total <- (results$Ratio3+results$Ratio4+results$Ratio5+
+                    results$Ratio6+results$Ratio7+results$Ratio8+
+                    results$Ratio9+results$Ratio10)/8
+```
+ 
+ I also tried comparing the matching results to a the analysis of an image obtained by subtracting the before from the after image. In the end we decided that the large stitched image was too warped by the stitching algorithim to find matches. This led to us deciding that we should try it with all of the individual images. This also did not produce any promising results. 
+ 
+## Data Exploration
+
+We decided to move forward with the data that we had and look at the distribution of the diameters of the particles. The following images show the combined data set with before and after distributions and trial one and two respectively. 
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(combined_before, combined_after)
+
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_data$Diameter), by = 1)
+
+# Initialize vectors to store the counts for each diameter threshold
+counts_before <- numeric(length(diameter_thresholds))
+counts_after <- numeric(length(diameter_thresholds))
+
+conversion <- .1/.00013581
+
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before[i] <- sum(combined_before$Diameter > threshold) *conversion
+  counts_after[i] <- sum(combined_after$Diameter > threshold) *conversion
+}
+
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before = counts_before,
+  After = counts_after
+)
+
+# Reshape the data from wide to long format
+
+plot_data_long <- melt(plot_data, id.vars = "Diameter", variable.name = "Group", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Group)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Diameter(log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Count of Particles Greater Than Diameter(microns)") +
+  theme_minimal()
+```
+
+
+Right off of the back we can see that there is somthing wrong here with the data. There appears to be large particles on the before image that do not appear in the after images. We find that the problem is isolated to the first trial as evidenced by the next three graphs. 
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(c(combined_before1$Diameter, combined_before2$Diameter,
+                                    combined_before3$Diameter, combined_after3$Diameter,
+                                    combined_after1$Diameter, combined_after2$Diameter)), by = 1)
+
+# Initialize vectors to store the counts for each diameter threshold
+counts_before1 <- numeric(length(diameter_thresholds))
+counts_before2 <- numeric(length(diameter_thresholds))
+counts_before3 <- numeric(length(diameter_thresholds))
+
+counts_after1 <- numeric(length(diameter_thresholds))
+counts_after2 <- numeric(length(diameter_thresholds))
+counts_after3 <- numeric(length(diameter_thresholds))
+
+conversion <- .1/.00013581
+
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before1[i] <- sum(combined_before1$Diameter > threshold) *conversion
+  counts_before2[i] <- sum(combined_before2$Diameter > threshold) *conversion
+  counts_before3[i] <- sum(combined_before3$Diameter > threshold) *conversion
+  counts_after1[i] <- sum(combined_after1$Diameter > threshold) *conversion
+  counts_after2[i] <- sum(combined_after2$Diameter > threshold) *conversion
+  counts_after3[i] <- sum(combined_after3$Diameter > threshold) *conversion
+}
+
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before1 = counts_before1,
+  Before2 = counts_before2,
+  Before3 = counts_before3,
+  After1 = counts_after1,
+  After2 = counts_after2,
+  After3 = counts_after3
+)
+
+# Reshape the data from wide to long format
+
+plot_data_long <- melt(plot_data, id.vars = "Diameter", variable.name = "Trial", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Trial)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Diameter(log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Count of Particles Greater Than Diameter(microns)") +
+  theme_minimal() +
+  scale_color_discrete(name = "Trial",
+                       labels = c("Before 1", "Before 2", "Before 3", "After 1", "After 2", "After 3"))
+```
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(combined_before1, combined_after1)
+
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_data$Diameter)+5, by = 1)
+
+# Initialize vectors to store the counts for each diameter threshold
+counts_before <- numeric(length(diameter_thresholds))
+counts_after <- numeric(length(diameter_thresholds))
+
+
+conversion <- .1/.00013581
+
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before[i] <- sum(combined_before1$Diameter > threshold) *conversion
+  counts_after[i] <- sum(combined_after1$Diameter > threshold) *conversion
+}
+
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before = counts_before,
+  After = counts_after
+)
+# Calculate the difference between "Before" and "After" counts
+plot_data$Difference <- plot_data$After - plot_data$Before
+
+# Reshape the data from wide to long format
+
+plot_data_long <- melt(plot_data, id.vars = "Diameter", variable.name = "Group", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Group)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Diameter(log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Count of Particles Greater Than Diameter(microns): Trial 1") +
+  theme_minimal() +
+  geom_line(data = plot_data, aes(x = Diameter, y = Difference), color = "blue", linetype = "solid") +
+  scale_color_manual(values = c("Before" = "coral", "After" = "gray", "Difference" = "blue"),
+                     labels = c("Before", "After", "Difference"))
+```
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(combined_before2, combined_after2)
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_data$Diameter), by = 1)
+# Initialize vectors to store the counts for each diameter threshold
+counts_before <- numeric(length(diameter_thresholds))
+counts_after <- numeric(length(diameter_thresholds))
+# Calculate the counts for each diameter threshold
+
+conversion <- .1/.00013581
+
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before[i] <- sum(combined_before2$Diameter > threshold) *conversion
+  counts_after[i] <- sum(combined_after2$Diameter > threshold) *conversion
+}
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before = counts_before,
+  After = counts_after
+)
+# Calculate the difference between "Before" and "After" counts
+plot_data$Difference <- plot_data$After - plot_data$Before
+
+# Reshape the data from wide to long format
+
+plot_data_long <- melt(plot_data, id.vars = "Diameter", variable.name = "Group", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Group)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Diameter(log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Count of Particles Greater Than Diameter(microns): Trial 2") +
+  theme_minimal() +
+  geom_line(data = plot_data, aes(x = Diameter, y = Difference), color = "blue", linetype = "solid") +
+  scale_color_manual(values = c("Before" = "black", "After" = "green", "Difference" = "blue"),
+                     labels = c("Before", "After", "Difference"))
+```
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(combined_before3, combined_after3)
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_data$Diameter), by = 1)
+# Initialize vectors to store the counts for each diameter threshold
+counts_before <- numeric(length(diameter_thresholds))
+counts_after <- numeric(length(diameter_thresholds))
+# Calculate the counts for each diameter threshold
+
+conversion <- .1/.00013581
+
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before[i] <- sum(combined_before3$Diameter > threshold) * conversion
+  counts_after[i] <- sum(combined_after3$Diameter > threshold) * conversion
+}
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before = counts_before,
+  After = counts_after
+)
+# Calculate the difference between "Before" and "After" counts
+plot_data$Difference <- plot_data$After - plot_data$Before
+
+# Reshape the data from wide to long format
+
+plot_data_long <- melt(plot_data, id.vars = "Diameter", variable.name = "Group", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Group)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Diameter(log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Count of Particles Greater Than Diameter(microns): Trial 3") +
+  theme_minimal() +
+  geom_line(data = plot_data, aes(x = Diameter, y = Difference), color = "blue", linetype = "solid") +
+  scale_color_manual(values = c("Before" = "black", "After" = "green", "Difference" = "blue"),
+                     labels = c("Before", "After", "Difference"))
+```
+
+
+The graphs are graphed on a log - log squared scale for x and y respectively. We now explore where in the before images does the problematic data arise. The next graph shows all of the sample seperately.
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(c(Particles_BefTr1Sa1Surf$Diameter,
+                         Particles_BefTr1Sa2Surf$Diameter,
+                         Particles_BefTr1Sa3Surf$Diameter,
+                         Particles_BefTr1Sa4Surf$Diameter,
+                         Particles_BefTr1Sa5Surf$Diameter,
+                         Particles_BefTr2Sa1Surf$Diameter,
+                         Particles_BefTr2Sa2Surf$Diameter,
+                         Particles_BefTr2Sa3Surf$Diameter,
+                         Particles_BefTr2Sa4Surf$Diameter,
+                         Particles_BefTr2Sa5Surf$Diameter,
+                         Particles_BefTr3Sa1Surf$Diameter,
+                         Particles_BefTr3Sa2Surf$Diameter,
+                         Particles_BefTr3Sa3Surf$Diameter,
+                         Particles_BefTr3Sa4Surf$Diameter,
+                         Particles_BefTr3Sa5Surf$Diameter,
+                         Particles_AftTr1Sa1Surf$Diameter,
+                         Particles_AftTr1Sa2Surf$Diameter,
+                         Particles_AftTr1Sa3Surf$Diameter,
+                         Particles_AftTr1Sa4Surf$Diameter,
+                         Particles_AftTr1Sa5Surf$Diameter,
+                         Particles_AftTr2Sa1Surf$Diameter,
+                         Particles_AftTr2Sa2Surf$Diameter,
+                         Particles_AftTr2Sa3Surf$Diameter,
+                         Particles_AftTr2Sa4Surf$Diameter,
+                         Particles_AftTr2Sa5Surf$Diameter,
+                         Particles_AftTr3Sa1Surf$Diameter,
+                         Particles_AftTr3Sa2Surf$Diameter,
+                         Particles_AftTr3Sa3Surf$Diameter,
+                         Particles_AftTr3Sa4Surf$Diameter,
+                         Particles_AftTr3Sa5Surf$Diameter)), by = 1)
+
+# Initialize vectors to store the counts for each diameter threshold
+counts_before1 <- numeric(length(diameter_thresholds))
+counts_before2 <- numeric(length(diameter_thresholds))
+counts_before3 <- numeric(length(diameter_thresholds))
+counts_before4 <- numeric(length(diameter_thresholds))
+counts_before5 <- numeric(length(diameter_thresholds))
+counts_before6 <- numeric(length(diameter_thresholds))
+counts_before7 <- numeric(length(diameter_thresholds))
+counts_before8 <- numeric(length(diameter_thresholds))
+counts_before9 <- numeric(length(diameter_thresholds))
+counts_before10 <- numeric(length(diameter_thresholds))
+counts_before11 <- numeric(length(diameter_thresholds))
+counts_before12<- numeric(length(diameter_thresholds))
+counts_before13 <- numeric(length(diameter_thresholds))
+counts_before14 <- numeric(length(diameter_thresholds))
+counts_before15 <- numeric(length(diameter_thresholds))
+
+counts_after1 <- numeric(length(diameter_thresholds))
+counts_after2 <- numeric(length(diameter_thresholds))
+counts_after3 <- numeric(length(diameter_thresholds))
+counts_after4 <- numeric(length(diameter_thresholds))
+counts_after5 <- numeric(length(diameter_thresholds))
+counts_after6 <- numeric(length(diameter_thresholds))
+counts_after7 <- numeric(length(diameter_thresholds))
+counts_after8 <- numeric(length(diameter_thresholds))
+counts_after9 <- numeric(length(diameter_thresholds))
+counts_after10 <- numeric(length(diameter_thresholds))
+counts_after11 <- numeric(length(diameter_thresholds))
+counts_after12 <- numeric(length(diameter_thresholds))
+counts_after13 <- numeric(length(diameter_thresholds))
+counts_after14 <- numeric(length(diameter_thresholds))
+counts_after15 <- numeric(length(diameter_thresholds))
+
+conversion <- .1/.00013581
+
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before1[i] <- sum(Particles_BefTr1Sa1Surf$Diameter > threshold)*conversion
+  counts_before2[i] <- sum(Particles_BefTr1Sa2Surf$Diameter > threshold)*conversion
+  counts_before3[i] <- sum(Particles_BefTr1Sa3Surf$Diameter > threshold)*conversion
+  counts_before4[i] <- sum(Particles_BefTr1Sa4Surf$Diameter > threshold)*conversion
+  counts_before5[i] <- sum(Particles_BefTr1Sa5Surf$Diameter > threshold)*conversion
+  counts_before6[i] <- sum(Particles_BefTr2Sa1Surf$Diameter > threshold)*conversion
+  counts_before7[i] <- sum(Particles_BefTr2Sa2Surf$Diameter > threshold)*conversion
+  counts_before8[i] <- sum(Particles_BefTr2Sa3Surf$Diameter > threshold)*conversion
+  counts_before9[i] <- sum(Particles_BefTr2Sa4Surf$Diameter > threshold)*conversion
+  counts_before10[i] <- sum(Particles_BefTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_before11[i] <- sum(Particles_BefTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_before12[i] <- sum(Particles_BefTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_before13[i] <- sum(Particles_BefTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_before14[i] <- sum(Particles_BefTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_before15[i] <- sum(Particles_BefTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_after1[i] <- sum(Particles_AftTr1Sa1Surf$Diameter > threshold)*conversion
+  counts_after2[i] <- sum(Particles_AftTr1Sa2Surf$Diameter > threshold)*conversion
+  counts_after3[i] <- sum(Particles_AftTr1Sa3Surf$Diameter > threshold)*conversion
+  counts_after4[i] <- sum(Particles_AftTr1Sa4Surf$Diameter > threshold)*conversion
+  counts_after5[i] <- sum(Particles_AftTr1Sa5Surf$Diameter > threshold)*conversion
+  counts_after6[i] <- sum(Particles_AftTr2Sa1Surf$Diameter > threshold)*conversion
+  counts_after7[i] <- sum(Particles_AftTr2Sa2Surf$Diameter > threshold)*conversion
+  counts_after8[i] <- sum(Particles_AftTr2Sa3Surf$Diameter > threshold)*conversion
+  counts_after9[i] <- sum(Particles_AftTr2Sa4Surf$Diameter > threshold)*conversion
+  counts_after10[i] <- sum(Particles_AftTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_after11[i] <- sum(Particles_AftTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_after12[i] <- sum(Particles_AftTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_after13[i] <- sum(Particles_AftTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_after14[i] <- sum(Particles_AftTr2Sa5Surf$Diameter > threshold)*conversion
+  counts_after15[i] <- sum(Particles_AftTr2Sa5Surf$Diameter > threshold)*conversion
+}
+
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before1 = counts_before1,
+  Before2 = counts_before2,
+  Before3 = counts_before3,
+  Before4 = counts_before4,
+  Before5 = counts_before5,
+  Before6 = counts_before6,
+  Before7 = counts_before7,
+  Before8 = counts_before8,
+  Before9 = counts_before9,
+  Before10 = counts_before10,
+  Before11 = counts_before11,
+  Before12 = counts_before12,
+  Before13 = counts_before13,
+  Before14 = counts_before14,
+  Before15 = counts_before15,
+  After1 = counts_after1,
+  After2 = counts_after2,
+  After3 = counts_after3,
+  After4 = counts_after4,
+  After5 = counts_after5,
+  After6 = counts_after6,
+  After7 = counts_after7,
+  After8 = counts_after8,
+  After9 = counts_after9,
+  After10 = counts_after10,
+  After11 = counts_after11,
+  After12 = counts_after12,
+  After13 = counts_after13,
+  After14 = counts_after14,
+  After15 = counts_after15
+)
+
+# Reshape the data from wide to long format
+
+plot_data_long <- melt(plot_data, id.vars = "Diameter", variable.name = "Trial", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Trial)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Diameter (microns) - Log Squared Scale", y = "Count of Particles (log scale)",
+       title = "All Samples All Trials" )+
+  theme_minimal() +
+  scale_color_discrete(name = "Trial",
+                       labels = c("Before 1", "Before 2", "Before 3", "Before 4", "Before 5", "Before 6", "Before 7", "Before 8", "Before 9", "Before 10", "Before 11", "Before 12", "Before 13", "Before 14", "Before 15", "After 1", "After 2", "After 3", "After 4", "After5", "After 6", "After 7", "After 8", "After 9", "After 10", "After 11", "After 12", "After 13", "After 14", "After 15"))
+```
+
+Here we can see that the before images of samples 1 and 2 of trial one appear to be the source of probelmatic data. This was confirmed by the following three graphs.
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+# Create a sequence of Area thresholds
+Area_thresholds <- seq(0, max(c(Summary_BefTr1Sa1Surf$`Total Area`,
+                         Summary_BefTr1Sa2Surf$`Total Area`,
+                         Summary_BefTr1Sa3Surf$`Total Area`,
+                         Summary_BefTr1Sa4Surf$`Total Area`,
+                         Summary_BefTr1Sa5Surf$`Total Area`,
+                         Summary_BefTr2Sa1Surf$`Total Area`,
+                         Summary_BefTr2Sa2Surf$`Total Area`,
+                         Summary_BefTr2Sa3Surf$`Total Area`,
+                         Summary_BefTr2Sa4Surf$`Total Area`,
+                         Summary_BefTr2Sa5Surf$`Total Area`,
+                         Summary_AftTr1Sa1Surf$`Total Area`,
+                         Summary_AftTr1Sa2Surf$`Total Area`,
+                         Summary_AftTr1Sa3Surf$`Total Area`,
+                         Summary_AftTr1Sa4Surf$`Total Area`,
+                         Summary_AftTr1Sa5Surf$`Total Area`,
+                         Summary_AftTr2Sa1Surf$`Total Area`,
+                         Summary_AftTr2Sa2Surf$`Total Area`,
+                         Summary_AftTr2Sa3Surf$`Total Area`,
+                         Summary_AftTr2Sa4Surf$`Total Area`,
+                         Summary_AftTr2Sa5Surf$`Total Area`,
+                         Summary_AftTr3Sa1Surf$`Total Area`,
+                         Summary_AftTr3Sa2Surf$`Total Area`,
+                         Summary_AftTr3Sa3Surf$`Total Area`,
+                         Summary_AftTr3Sa4Surf$`Total Area`,
+                         Summary_AftTr3Sa5Surf$`Total Area`)), by = 1)
+
+# Initialize vectors to store the counts for each Area threshold
+counts_before1 <- numeric(length(Area_thresholds))
+counts_before2 <- numeric(length(Area_thresholds))
+counts_before3 <- numeric(length(Area_thresholds))
+counts_before4 <- numeric(length(Area_thresholds))
+counts_before5 <- numeric(length(Area_thresholds))
+counts_before6 <- numeric(length(Area_thresholds))
+counts_before7 <- numeric(length(Area_thresholds))
+counts_before8 <- numeric(length(Area_thresholds))
+counts_before9 <- numeric(length(Area_thresholds))
+counts_before10 <- numeric(length(Area_thresholds))
+counts_before11 <- numeric(length(Area_thresholds))
+counts_before12 <- numeric(length(Area_thresholds))
+counts_before13 <- numeric(length(Area_thresholds))
+counts_before14 <- numeric(length(Area_thresholds))
+counts_before15 <- numeric(length(Area_thresholds))
+
+counts_after1 <- numeric(length(Area_thresholds))
+counts_after2 <- numeric(length(Area_thresholds))
+counts_after3 <- numeric(length(Area_thresholds))
+counts_after4 <- numeric(length(Area_thresholds))
+counts_after5 <- numeric(length(Area_thresholds))
+counts_after6 <- numeric(length(Area_thresholds))
+counts_after7 <- numeric(length(Area_thresholds))
+counts_after8 <- numeric(length(Area_thresholds))
+counts_after9 <- numeric(length(Area_thresholds))
+counts_after10 <- numeric(length(Area_thresholds))
+counts_after11 <- numeric(length(Area_thresholds))
+counts_after12 <- numeric(length(Area_thresholds))
+counts_after13 <- numeric(length(Area_thresholds))
+counts_after14 <- numeric(length(Area_thresholds))
+counts_after15 <- numeric(length(Area_thresholds))
+
+# Calculate the counts for each Area threshold
+for (i in seq_along(Area_thresholds)) {
+  threshold <- Area_thresholds[i]
+  counts_before1[i] <- sum(Summary_BefTr1Sa1Surf$`Total Area` > threshold)
+  counts_before2[i] <- sum(Summary_BefTr1Sa2Surf$`Total Area` > threshold)
+  counts_before3[i] <- sum(Summary_BefTr1Sa3Surf$`Total Area` > threshold)
+  counts_before4[i] <- sum(Summary_BefTr1Sa4Surf$`Total Area` > threshold)
+  counts_before5[i] <- sum(Summary_BefTr1Sa5Surf$`Total Area` > threshold)
+  counts_before6[i] <- sum(Summary_BefTr2Sa1Surf$`Total Area` > threshold)
+  counts_before7[i] <- sum(Summary_BefTr2Sa2Surf$`Total Area` > threshold)
+  counts_before8[i] <- sum(Summary_BefTr2Sa3Surf$`Total Area` > threshold)
+  counts_before9[i] <- sum(Summary_BefTr2Sa4Surf$`Total Area` > threshold)
+  counts_before10[i] <- sum(Summary_BefTr2Sa5Surf$`Total Area` > threshold)
+  counts_before11[i] <- sum(Summary_BefTr3Sa1Surf$`Total Area` > threshold)
+  counts_before12[i] <- sum(Summary_BefTr3Sa2Surf$`Total Area` > threshold)
+  counts_before13[i] <- sum(Summary_BefTr3Sa3Surf$`Total Area` > threshold)
+  counts_before14[i] <- sum(Summary_BefTr3Sa4Surf$`Total Area` > threshold)
+  counts_before15[i] <- sum(Summary_BefTr3Sa5Surf$`Total Area` > threshold)
+  counts_after1[i] <- sum(Summary_AftTr1Sa1Surf$`Total Area` > threshold)
+  counts_after2[i] <- sum(Summary_AftTr1Sa2Surf$`Total Area` > threshold)
+  counts_after3[i] <- sum(Summary_AftTr1Sa3Surf$`Total Area` > threshold)
+  counts_after4[i] <- sum(Summary_AftTr1Sa4Surf$`Total Area` > threshold)
+  counts_after5[i] <- sum(Summary_AftTr1Sa5Surf$`Total Area` > threshold)
+  counts_after6[i] <- sum(Summary_AftTr2Sa1Surf$`Total Area` > threshold)
+  counts_after7[i] <- sum(Summary_AftTr2Sa2Surf$`Total Area` > threshold)
+  counts_after8[i] <- sum(Summary_AftTr2Sa3Surf$`Total Area` > threshold)
+  counts_after9[i] <- sum(Summary_AftTr2Sa4Surf$`Total Area` > threshold)
+  counts_after10[i] <- sum(Summary_AftTr2Sa5Surf$`Total Area` > threshold)
+  counts_after11[i] <- sum(Summary_AftTr3Sa1Surf$`Total Area` > threshold)
+  counts_after12[i] <- sum(Summary_AftTr3Sa2Surf$`Total Area` > threshold)
+  counts_after13[i] <- sum(Summary_AftTr3Sa3Surf$`Total Area` > threshold)
+  counts_after14[i] <- sum(Summary_AftTr3Sa4Surf$`Total Area` > threshold)
+  counts_after15[i] <- sum(Summary_AftTr3Sa5Surf$`Total Area` > threshold)
+}
+
+# Create a data frame with the Area thresholds and counts
+plot_data <- data.frame(
+  Area = Area_thresholds,
+  Before1 = counts_before1,
+  Before2 = counts_before2,
+  Before3 = counts_before3,
+  Before4 = counts_before4,
+  Before5 = counts_before5,
+  Before6 = counts_before6,
+  Before7 = counts_before7,
+  Before8 = counts_before8,
+  Before9 = counts_before9,
+  Before10 = counts_before10,
+  Before11 = counts_before11,
+  Before12 = counts_before12,
+  Before13 = counts_before13,
+  Before14 = counts_before14,
+  Before15 = counts_before15,
+  After1 = counts_after1,
+  After2 = counts_after2,
+  After3 = counts_after3,
+  After4 = counts_after4,
+  After5 = counts_after5,
+  After6 = counts_after6,
+  After7 = counts_after7,
+  After8 = counts_after8,
+  After9 = counts_after9,
+  After10 = counts_after10,
+  After11 = counts_after11,
+  After12 = counts_after12,
+  After13 = counts_after13,
+  After14 = counts_after14,
+  After15 = counts_after15
+)
+
+# Reshape the data from wide to long format
+
+plot_data_long <- melt(plot_data, id.vars = "Area", variable.name = "Trial", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Area, y = Count, color = Trial)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Area (microns) - Log Squared Scale", y = "Count of Summary (log scale)",
+       title = "Count of Summary Greater Than Area (microns)" )+
+  theme_minimal() +
+  scale_color_discrete(name = "Trial",
+                       labels = c("Before 1", "Before 2", "Before 3", "Before 4", "Before 5", "Before 6", "Before 7", "Before 8", "Before 9", "Before 10", "Before 11", "Before 12", "Before 13", "Before 14", "Before 15", "After 1", "After 2", "After 3", "After 4", "After5", "After 6", "After 7", "After 8", "After 9", "After 10", "After 11", "After 12", "After 13", "After 14", "After 15"))
+
+
+# Combine the data frames and extract the last three digits from the Slice column
+combined_data <- rbind(
+  data.frame(Sample = "BefTr1Sa2Surf", Summary_BefTr1Sa2Surf),
+  data.frame(Sample = "BefTr2Sa2Surf", Summary_BefTr2Sa2Surf),
+  data.frame(Sample = "AftTr1Sa2Surf", Summary_AftTr1Sa2Surf)
+) %>%
+  mutate(Slice_Numeric = as.numeric(substr(Slice, nchar(Slice) - 6, nchar(Slice) - 4)))
+
+# Create the plot
+ggplot(combined_data, aes(x = Slice_Numeric, y = Total.Area, color = Sample, group = Sample)) +
+  geom_line() +
+  labs(x = "Slice", y = "Total Area", color = "Sample",
+       title = "Total Area vs. Slice for BefTr1Sa2Surf and BefTr2Sa2Surf") +
+  # scale_x_continuous(breaks = unique(combined_data$Slice_Numeric),
+  #                    labels = unique(combined_data$Slice_Numeric)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+combined_data <- rbind(
+  data.frame(Sample = "BefTr1Sa1Surf", Summary_BefTr1Sa1Surf),
+  data.frame(Sample = "BefTr2Sa1Surf", Summary_BefTr2Sa1Surf),
+  data.frame(Sample = "AftTr1Sa1Surf", Summary_AftTr1Sa1Surf)
+) %>%
+  mutate(Slice_Numeric = as.numeric(substr(Slice, nchar(Slice) - 6, nchar(Slice) - 4)))
+
+# Create the plot
+ggplot(combined_data, aes(x = Slice_Numeric, y = Total.Area, color = Sample, group = Sample)) +
+  geom_line() +
+  labs(x = "Slice", y = "Total Area", color = "Sample",
+       title = "Total Area over Slice for BefTr1Sa1Surf and BefTr2Sa1Surf and AftTr1Sa1Surf") +
+  # scale_x_continuous(breaks = unique(combined_data$Slice_Numeric),
+  #                    labels = unique(combined_data$Slice_Numeric)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+combined_data <- rbind(
+  data.frame(Sample = "BefTr1Sa3Surf", Summary_BefTr1Sa3Surf),
+  data.frame(Sample = "BefTr2Sa3Surf", Summary_BefTr2Sa3Surf),
+  data.frame(Sample = "AftTr1Sa3Surf", Summary_AftTr1Sa3Surf)
+) %>%
+  mutate(Slice_Numeric = as.numeric(substr(Slice, nchar(Slice) - 6, nchar(Slice) - 4)))
+
+# Create the plot
+ggplot(combined_data, aes(x = Slice_Numeric, y = Total.Area, color = Sample, group = Sample)) +
+  geom_line() +
+  labs(x = "Slice", y = "Total Area", color = "Sample",
+       title = "Total Area over Slice for BefTr1Sa1Surf and BefTr2Sa1Surf and AftTr1Sa1Surf") +
+  # scale_x_continuous(breaks = unique(combined_data$Slice_Numeric),
+  #                    labels = unique(combined_data$Slice_Numeric)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+combined_data <- rbind(
+  data.frame(Sample = "BefTr1Sa4Surf", Summary_BefTr1Sa4Surf),
+  data.frame(Sample = "BefTr2Sa4Surf", Summary_BefTr2Sa4Surf),
+  data.frame(Sample = "AftTr1Sa4Surf", Summary_AftTr1Sa4Surf)
+) %>%
+  mutate(Slice_Numeric = as.numeric(substr(Slice, nchar(Slice) - 6, nchar(Slice) - 4)))
+
+# Create the plot
+ggplot(combined_data, aes(x = Slice_Numeric, y = Total.Area, color = Sample, group = Sample)) +
+  geom_line() +
+  labs(x = "Slice", y = "Total Area", color = "Sample",
+       title = "Total Area over Slice for BefTr1Sa1Surf and BefTr2Sa1Surf and AftTr1Sa1Surf") +
+  # scale_x_continuous(breaks = unique(combined_data$Slice_Numeric),
+  #                    labels = unique(combined_data$Slice_Numeric)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+combined_data <- rbind(
+  data.frame(Sample = "BefTr1Sa5Surf", Summary_BefTr1Sa5Surf),
+  data.frame(Sample = "BefTr2Sa5Surf", Summary_BefTr2Sa5Surf),
+  data.frame(Sample = "AftTr1Sa5Surf", Summary_AftTr1Sa5Surf)
+) %>%
+  mutate(Slice_Numeric = as.numeric(substr(Slice, nchar(Slice) - 6, nchar(Slice) - 4)))
+
+# Create the plot
+ggplot(combined_data, aes(x = Slice_Numeric, y = Total.Area, color = Sample, group = Sample)) +
+  geom_line() +
+  labs(x = "Slice", y = "Total Area", color = "Sample",
+       title = "Total Area over Slice for BefTr1Sa1Surf and BefTr2Sa1Surf and AftTr1Sa1Surf") +
+  # scale_x_continuous(breaks = unique(combined_data$Slice_Numeric),
+  #                    labels = unique(combined_data$Slice_Numeric)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+
+I will now take out those two samples from the first trial. After taking the two before samples the data appears to be more similar to what we would expect from a before and after.
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+combined_before_alt <- rbind(
+                         Particles_BefTr1Sa3Surf,
+                         Particles_BefTr1Sa4Surf,
+                         Particles_BefTr1Sa5Surf,
+                         Particles_BefTr2Sa1Surf,
+                         Particles_BefTr2Sa2Surf,
+                         Particles_BefTr2Sa3Surf,
+                         Particles_BefTr2Sa4Surf,
+                         Particles_BefTr2Sa5Surf,
+                         Particles_BefTr3Sa1Surf,
+                         Particles_BefTr3Sa2Surf,
+                         Particles_BefTr3Sa3Surf,
+                         Particles_BefTr3Sa4Surf,
+                         Particles_BefTr3Sa5Surf)
+combined_after_alt <- rbind(
+                         Particles_AftTr1Sa3Surf,
+                         Particles_AftTr1Sa4Surf,
+                         Particles_AftTr1Sa5Surf,
+                         Particles_AftTr2Sa1Surf,
+                         Particles_AftTr2Sa2Surf,
+                         Particles_AftTr2Sa3Surf,
+                         Particles_AftTr2Sa4Surf,
+                         Particles_AftTr2Sa5Surf,
+                         Particles_AftTr3Sa1Surf,
+                         Particles_AftTr3Sa2Surf,
+                         Particles_AftTr3Sa3Surf,
+                         Particles_AftTr3Sa4Surf,
+                         Particles_AftTr3Sa5Surf)
+
+combined_before1_alt <- rbind(
+                         Particles_BefTr1Sa3Surf,
+                         Particles_BefTr1Sa4Surf,
+                         Particles_BefTr1Sa5Surf)
+combined_after1_alt <- rbind(
+                         Particles_AftTr1Sa3Surf,
+                         Particles_AftTr1Sa4Surf,
+                         Particles_AftTr1Sa5Surf)
+#
+# Combine the data from combined_before and combined_after
+combined_data_alt <- rbind(combined_before_alt, combined_after_alt)
+
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_data_alt$Diameter), by = 1)
+
+# Initialize vectors to store the counts for each diameter threshold
+counts_before <- numeric(length(diameter_thresholds))
+counts_after <- numeric(length(diameter_thresholds))
+
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before[i] <- sum(combined_before_alt$Diameter > threshold)*736
+  counts_after[i] <- sum(combined_after_alt$Diameter > threshold)*736
+}
+
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before = counts_before,
+  After = counts_after
+)
+
+plot_data$Difference <- plot_data$After - plot_data$Before
+# Reshape the data from wide to long format
+
+plot_data_long <- melt(plot_data, id.vars = "Diameter", variable.name = "Group", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+# Define the parameters for the line equation
+conversion <- .1/.00013581
+slope <- -0.926
+L <- 10^(sqrt((log10((sum(combined_data_alt$Diameter >=
+                            max(combined_data_alt$Diameter)))*conversion)/-slope) + 
+      (log10(max(combined_data_alt$Diameter))^2)))
+
+intercept <- (-0.926 *(-log10(L)^2))
+
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Group)) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter(log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Combined Trials minus Tr1 Samp1&2") +
+  theme_minimal() +
+  geom_abline(slope = slope, intercept = intercept, linetype = "dashed", color = "red", show.legend = T) +
+  scale_color_manual(values = c("Before" = "coral", "After" = "gray", "Difference" = "blue","log(N) = -.926(log10(x)^2 - log10(L)^2" = "red"),
+                     labels = c("Before", "After", "Difference", "log(N) = -.926(log10(x)^2 - log10(L)^2"))
+
+
+
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(combined_before1_alt, combined_after1_alt)
+
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_data$Diameter)+5, by = 1)
+conversion <- .1/.00013581
+
+# Initialize vectors to store the counts for each diameter threshold
+counts_before <- numeric(length(diameter_thresholds))
+counts_after <- numeric(length(diameter_thresholds))
+
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before[i] <- sum(combined_before1_alt$Diameter > threshold)*conversion
+  counts_after[i] <- sum(combined_after1_alt$Diameter > threshold)*conversion
+}
+
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before = counts_before,
+  After = counts_after
+)
+# Calculate the difference between "Before" and "After" counts
+plot_data$Difference <- plot_data$After - plot_data$Before
+
+# Reshape the data from wide to long format
+
+plot_data_long <- melt(plot_data, id.vars = "Diameter", variable.name = "Group", value.name = "Count")
+
+
+slope <- -0.926
+L <- 10^(sqrt((log10((sum(combined_data$Diameter >=
+                            max(combined_data$Diameter)))*conversion)/-slope) + 
+      (log10(max(combined_data$Diameter))^2)))
+
+intercept <- (-0.926 *(-log10(L)^2))
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Group)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Diameter(log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Trial 1 minus samples 1 and 2") +
+  theme_minimal() +
+  scale_color_manual(values = c("Before" = "coral", "After" = "gray", "Difference" = "blue"),
+                     labels = c("Before", "After", "Difference"))
+
+
+```
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,eval=FALSE}
+# Define the bin edges for particle size
+combined_data <- rbind(combined_before_alt, combined_after_alt)
+bin_edges <- seq(0, max(combined_data$Diameter), by = 5)
+
+# Create a new column "size_bin" in the data frame
+# and assign the corresponding bin to each particle based on its diameter
+combined_before_alt$size_bin <- cut(combined_before_alt$Diameter, breaks = bin_edges, right = FALSE
+                     )
+
+# Create a summary table with the count of particles in each size bin
+size_bin_table1 <- table(combined_before_alt$size_bin)
+
+# and assign the corresponding bin to each particle based on its diameter
+combined_after_alt$size_bin <- cut(combined_after_alt$Diameter, breaks = bin_edges, right = FALSE)
+
+# Create a summary table with the count of particles in each size bin
+size_bin_table2 <- table(combined_after_alt$size_bin)
+
+
+# Create a table that subtracts the counts of particles in each size bin
+size_bin_diff_table <- size_bin_table2 - size_bin_table1
+
+
+# Print the summary table
+print("Combined Before")
+print(size_bin_table1)
+print("Combined After")
+print(size_bin_table2)
+print("Difference")
+print(size_bin_diff_table)
+```
+
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE}
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(combined_before1, combined_after1)
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(0, max(combined_data$Diameter), by = 1)
+# Initialize vectors to store the counts for each diameter threshold
+counts_before <- numeric(length(diameter_thresholds))
+counts_after <- numeric(length(diameter_thresholds))
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before[i] <- sum(combined_before1$Diameter > threshold)
+  counts_after[i] <- sum(combined_after1$Diameter > threshold)
+}
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = diameter_thresholds,
+  Before = counts_before,
+  After = counts_after
+)
+# Calculate the difference between "Before" and "After" counts
+trial1_diff <- plot_data$After - plot_data$Before
+
+
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(combined_before2, combined_after2)
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(0, max(combined_data$Diameter), by = 1)
+# Initialize vectors to store the counts for each diameter threshold
+counts_before <- numeric(length(diameter_thresholds))
+counts_after <- numeric(length(diameter_thresholds))
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before[i] <- sum(combined_before2$Diameter > threshold)
+  counts_after[i] <- sum(combined_after2$Diameter > threshold)
+}
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = diameter_thresholds,
+  Before = counts_before,
+  After = counts_after
+)
+# Calculate the difference between "Before" and "After" counts
+trial2_diff <- plot_data$After - plot_data$Before
+
+
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(combined_before3, combined_after3)
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(0, max(combined_data$Diameter), by = 1)
+# Initialize vectors to store the counts for each diameter threshold
+counts_before <- numeric(length(diameter_thresholds))
+counts_after <- numeric(length(diameter_thresholds))
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before[i] <- sum(combined_before3$Diameter > threshold)
+  counts_after[i] <- sum(combined_after3$Diameter > threshold)
+}
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = diameter_thresholds,
+  Before = counts_before,
+  After = counts_after
+)
+# Calculate the difference between "Before" and "After" counts
+trial3_diff <- plot_data$After - plot_data$Before
+
+
+# Combine the difference data into a single data frame
+diff_data <- data.frame(
+  Difference = c(trial1_diff, trial2_diff, trial3_diff),
+  Trial = c(rep("Trial 1", length(trial1_diff)),
+            rep("Trial 2", length(trial2_diff)),
+            rep("Trial 3", length(trial3_diff)))
+)
+
+# Perform the Kruskal-Wallis test
+kruskal_test <- kruskal.test(Difference ~ Trial, data = diff_data)
+
+# Print the Kruskal-Wallis test results
+print(kruskal_test)
+
+# Perform the Dunn test for pairwise comparisons
+library(FSA)
+dunn_test <- dunnTest(Difference ~ Trial, data = diff_data, method = "bonferroni")
+
+# Print the Dunn test results
+print(dunn_test)
+```
+
+
+```{r}
+
+# Combine the data from combined_before and combined_after
+combined_data <- rbind(combined_before2, combined_after2, combined_before3, combined_after3)
+
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_data$Diameter)+5, by = 1)
+conversion <- .1/.00013581
+
+# Initialize vectors to store the counts for each diameter threshold
+counts_before2 <- numeric(length(diameter_thresholds))
+counts_after2 <- numeric(length(diameter_thresholds))
+counts_before3 <- numeric(length(diameter_thresholds))
+counts_after3 <- numeric(length(diameter_thresholds))
+
+# Calculate the counts for each diameter threshold
+for (i in seq_along(diameter_thresholds)) {
+  threshold <- diameter_thresholds[i]
+  counts_before2[i] <- sum(combined_before2$Diameter > threshold)*conversion
+  counts_after2[i] <- sum(combined_after2$Diameter > threshold)*conversion
+  counts_before3[i] <- sum(combined_before3$Diameter > threshold)*conversion
+  counts_after3[i] <- sum(combined_after3$Diameter > threshold)*conversion
+}
+
+# Create a data frame with the diameter thresholds and counts
+plot_data <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Before2 = counts_before2,
+  After2 = counts_after2,
+  Before3 = counts_before3,
+  After3 = counts_after3
+)
+
+# Calculate the difference between "Before" and "After" counts
+plot_data$Difference2 <- plot_data$After2 - plot_data$Before2
+plot_data$Difference3 <- plot_data$After3 - plot_data$Before3
+
+plot_data1 <- data.frame(
+  Diameter = (log10(diameter_thresholds)^2),
+  Difference2 = plot_data$Difference2,
+  Difference3 = plot_data$Difference3
+)
+
+# Reshape the data from wide to long format
+lm2 <- lm(plot_data1$Diameter ~ plot_data1$Difference2)
+lm3 <- lm(plot_data1$Diameter ~ plot_data1$Difference3)
+
+summary(lm2)
+summary(lm3)
+
+slope <- -0.926
+L3 <- 10^(sqrt((log10((sum(combined_after3$Diameter >=
+                            max(combined_after3$Diameter)))*conversion)/-slope) + 
+      (log10(max(combined_after3$Diameter))^2)))
+L3b <- 10^(sqrt((log10((sum(combined_before3$Diameter >=
+                            max(combined_before3$Diameter)))*conversion)/-slope) + 
+      (log10(max(combined_before3$Diameter))^2)))
+
+
+intercept3 <- (-0.926 *(-log10(L3)^2))
+
+L2 <- 10^(sqrt((log10((sum(combined_after2$Diameter >=
+                            max(combined_after2$Diameter)))*conversion)/-slope) + 
+      (log10(max(combined_after2$Diameter))^2)))
+
+L2b <- 10^(sqrt((log10((sum(combined_before2$Diameter >=
+                            max(combined_before2$Diameter)))*conversion)/-slope) + 
+      (log10(max(combined_before2$Diameter))^2)))
+
+
+intercept2 <- (-0.926 *(-log10(L2)^2))
+
+plot_data_long <- melt(plot_data1, id.vars = "Diameter", variable.name = "Group", value.name = "Count")
+
+# Create the plot using ggplot2 with logarithmic y-axis scale
+
+ggplot(plot_data_long, aes(x = Diameter, y = Count, color = Group)) +
+  geom_line() +
+  scale_y_log10() +  # Apply logarithmic scale to the y-axis
+  labs(x = "Diameter(log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Particles of Trial 2 and 3 with IEST Standards")+
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_minimal() +
+  geom_abline(slope = slope, intercept = intercept2, linetype = "dashed", color = "red", show.legend = T)+
+  geom_abline(slope = slope, intercept = intercept3, linetype = "dashed", color = "purple", show.legend = T)
+  # scale_color_manual(values = c("Before" = "coral", "After" = "gray", "Difference" = "blue"),
+  #                    labels = c("Before", "After", "Difference"))
+
+```
+

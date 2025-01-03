@@ -1,0 +1,554 @@
+---
+title: "Updated Analysis of Edge Particle Data (Trials 2-5, 5 Samples Each)"
+author: "Data Analyst"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(reshape2)
+library(ggplot2)
+library(FSA)
+library(purrr)
+library(stringr)
+library(lme4)
+library(Matrix)
+library(kableExtra)
+```
+
+# The Findings and Processes through which Analysis Occurred
+
+## The Data
+
+First, we'll load and preprocess the data for all 20 samples (excluding Trial 1), then combine them into Trials 2-5:
+
+```{r data_loading, echo = FALSE, warning = FALSE, message = FALSE}
+# Function to load and process a single sample
+load_sample_data <- function(sample_number) {
+  # Format sample number with leading zeros
+  sample_str <- sprintf("%02d", sample_number)
+  
+  # Construct file paths
+  particles_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
+  summary_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
+  
+  # Load particle data
+  particles_data <- read.csv(particles_path)
+  particles_data$Sample <- sample_number
+  particles_data$Diameter <- sqrt(particles_data$Area/pi) * 2
+  
+  # Load summary data
+  summary_data <- read.csv(summary_path)
+  summary_data <- summary_data[,-c(8:11)]
+  names(summary_data) <- make.names(names(summary_data))
+  summary_data$Count <- as.numeric(gsub("[^0-9.]", "", summary_data$Count))
+  summary_data$width <- as.numeric(gsub("[^0-9.]", "", summary_data$width))
+  summary_data <- summary_data %>% drop_na()
+  summary_data$Sample <- sample_number
+  
+  list(particles = particles_data, summary = summary_data)
+}
+
+# Load data for samples 6-25 (excluding Trial 1)
+all_data <- map(6:30, load_sample_data)
+
+# Combine all particle data
+all_particles_data <- bind_rows(map(all_data, "particles"))
+
+# Combine all summary data
+all_summary_data <- bind_rows(map(all_data, "summary"))
+
+# Assign trials to samples (5 samples per trial), keeping original trial numbering
+all_particles_data$Trial <- ceiling((all_particles_data$Sample - 5) / 5) + 1
+all_summary_data$Trial <- ceiling((all_summary_data$Sample - 5) / 5) + 1
+
+
+all_summary_data$width <- all_summary_data$width - (2*(all_summary_data$width - (.9*2880)))
+
+# Normalize width for each sample
+# all_summary_data <- all_summary_data %>%
+#   group_by(Sample) %>%
+#   mutate(Actual_Total_width = width / width * max(width)) #Normalize to Max Possible
+
+# Add cleaning method information
+all_summary_data <- all_summary_data %>%
+  mutate(Cleaning_Method = case_when(
+    Trial %in% c(2, 3) ~ "IPA Rinse",
+    Trial %in% c(4, 5) ~ "Drag and Wipe",
+    Trial %in% c(6) ~ "First Contact"
+  ))
+
+# Add row number within trial
+all_summary_data <- all_summary_data %>%
+  group_by(Trial, Sample) %>%
+  mutate(Row_Number = row_number())
+
+# # Display the first few rows of each dataset
+# kable(head(all_particles_data), caption = "First few rows of particle data") %>%
+#   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+# 
+# kable(head(all_summary_data), caption = "First few rows of summary data") %>%
+#   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+## Data Exploration
+
+Let's start by examining the distribution of particle diameters across all trials:
+
+```{r particle_distribution}
+# Define diameter thresholds and conversion factor
+diameter_thresholds <- seq(1, max(all_particles_data$Diameter), by = 1)
+
+# Function to get counts for a given dataset
+get_counts <- function(data) {
+  sapply(diameter_thresholds, function(x) sum(data$Diameter > x))
+}
+
+# Calculate counts for each trial
+counts_by_trial <- all_particles_data %>%
+  group_by(Trial) %>%
+  group_modify(~ tibble(
+    Diameter = diameter_thresholds,
+    Count = get_counts(.x)
+  ))
+
+# 2. Get total width for each trial
+total_width_by_trial <- all_summary_data %>%
+  group_by(Trial) %>%
+  summarise(Total_Width = sum(width))
+
+# 3. Calculate the conversion factor
+max_width <- max(total_width_by_trial$Total_Width)
+conversion_factors <- max_width / total_width_by_trial$Total_Width
+
+# 4. Apply the conversion factor to the counts
+normalized_counts <- counts_by_trial %>%
+  left_join(total_width_by_trial, by = "Trial") %>%
+  mutate(
+    Conversion_Factor = max_width / Total_Width,
+    Normalized_Count = Count * Conversion_Factor
+  )
+
+# Display the results
+kable(normalized_counts, caption = "Normalized Counts")
+
+# Plot the distribution
+ggplot(counts_by_trial, aes(x = log10(Diameter)^2, y = Count, color = factor(Trial))) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Distribution of Particle Diameters by Trial") +
+  theme_minimal() +
+  scale_color_discrete(name = "Trial")
+```
+
+This graph shows the distribution of particle diameters on a log-log squared scale for Trials 2-5, with each line representing a trial.
+
+Next, let's examine the relationship between row number and normalized total area in the summary data for each trial:
+
+```{r slice_area_relationship}
+ggplot(all_summary_data, aes(x = Row_Number, y = Total.Area, 
+                             group = interaction(Trial, Sample), color = factor(Trial))) +
+  geom_line(alpha = 0.5) +
+  labs(x = "Row Number", y = "Total Area",
+       title = "Total Area vs. Row Number (Trials 2-5)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_discrete(name = "Trial")
+```
+
+This graph shows how the total area of particles changes across different rows of the sample for each trial. The thinner lines represent individual samples, while the thicker lines show the mean for each trial.
+
+## Statistical Analysis
+
+Let's perform some statistical analyses on our data:
+
+```{r statistical_analysis}
+# Correlation between Count and Normalized Total Area for each trial
+cor_tests <- all_summary_data %>%
+  group_by(Trial) %>%
+  summarise(Correlation = cor(Count, Total.Area))
+
+kable(cor_tests, caption = "Correlation between Count and Total Area by Trial") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# ANOVA to test for differences between trials
+anova_result <- aov(Total.Area ~ factor(Trial), data = all_summary_data)
+anova_summary <- summary(anova_result)
+
+kable(anova_summary[[1]], caption = "ANOVA Results: Differences between Trials") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# Linear mixed effects model
+lm_models <- all_summary_data %>%
+  group_by(Trial) %>%
+  do(model = lm(Total.Area ~ Count, data = .))
+
+# Function to extract key statistics from lm summary
+extract_lm_stats <- function(model) {
+  summary_stats <- summary(model)
+  data.frame(
+    Coefficient = coef(summary_stats)[2, 1],
+    Std_Error = coef(summary_stats)[2, 2],
+    t_value = coef(summary_stats)[2, 3],
+    p_value = coef(summary_stats)[2, 4],
+    R_squared = summary_stats$r.squared,
+    Adj_R_squared = summary_stats$adj.r.squared,
+    F_statistic = summary_stats$fstatistic[1],
+    DF = paste(summary_stats$df[1], summary_stats$df[2], sep = ", ")
+  )
+}
+
+# Extract and combine stats for all trials
+lm_stats <- map_dfr(lm_models$model, extract_lm_stats, .id = "Trial")
+
+# Print summaries of individual models using kable
+kable(lm_stats, caption = "Linear Model Summaries for Each Trial", digits = 4) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+The correlation tests show the relationship between the count of particles and their normalized total area for each trial. The ANOVA test checks if there are significant differences in Normalized Total Area between trials. The linear mixed effects model provides insights into the relationship between Count and Normalized Total Area while accounting for the trial-level variation.
+
+## Comparison to IEST Standards
+
+Let's compare our particle size distribution to the IEST (Institute of Environmental Sciences and Technology) standards:
+
+```{r iest_comparison}
+# Define IEST standard parameters
+slope <- -0.926
+trial2 <- filter(normalized_counts,Trial == 2)
+trial3 <- filter(normalized_counts,Trial == 3)
+trial4 <- filter(normalized_counts,Trial == 4)
+trial5 <- filter(normalized_counts,Trial == 5)
+trial6 <- filter(normalized_counts,Trial == 6)
+
+L2 <- 10^(sqrt((log10(max(trial2$Count)) / -slope) + (log10(max(trial2$Diameter))^2)))
+L3 <- 10^(sqrt((log10(max(trial3$Count)) / -slope) + (log10(max(trial3$Diameter))^2)))
+L4 <- 10^(sqrt((log10(max(trial4$Count)) / -slope) + (log10(max(trial4$Diameter))^2)))
+L5 <- 10^(sqrt((log10(max(trial5$Count)) / -slope) + (log10(max(trial5$Diameter))^2)))
+L6 <- 10^(sqrt((log10(max(trial6$Count)) / -slope) + (log10(max(trial6$Diameter))^2)))
+
+intercept2 <- (-0.926 * (-log10(L2)^2))
+intercept3 <- (-0.926 * (-log10(L3)^2))
+intercept4 <- (-0.926 * (-log10(L4)^2))
+intercept5 <- (-0.926 * (-log10(L5)^2))
+intercept6 <- (-0.926 * (-log10(L6)^2))
+
+# Plot data with IEST standard line
+ggplot(normalized_counts, aes(x = log10(Diameter)^2, y = Count, color = factor(Trial))) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Count of Particles (log scale)",
+       title = "Particle Distribution with IEST Standard (Trials 2-6)") +
+  theme_minimal() +
+  geom_abline(slope = slope, intercept = intercept2, linetype = "dashed", color = "darkred") +
+  geom_abline(slope = slope, intercept = intercept3, linetype = "dashed", color = "darkolivegreen") +
+  geom_abline(slope = slope, intercept = intercept4, linetype = "dashed", color = "green4") +
+  geom_abline(slope = slope, intercept = intercept5, linetype = "dashed", color = "navy") +
+    geom_abline(slope = slope, intercept = intercept6, linetype = "dashed", color = "purple4") +
+  annotate("text", x = max(log10(normalized_counts$Diameter)^2), y = 10, 
+           label = "IEST Standard", color = "black", hjust = 1) +
+  scale_color_discrete(name = "Trial")
+```
+
+```{r}
+# Define IEST standard parameters
+slope <- -0.926
+trial2 <- filter(normalized_counts, Trial == 2)
+trial3 <- filter(normalized_counts, Trial == 3)
+trial4 <- filter(normalized_counts, Trial == 4)
+trial5 <- filter(normalized_counts, Trial == 5)
+trial6 <- filter(normalized_counts, Trial == 6)
+
+# Calculate L values for each trial
+L2 <- 10^(sqrt((log10(max(trial2$Count)) / -slope) + (log10(max(trial2$Diameter))^2)))
+L3 <- 10^(sqrt((log10(max(trial3$Count)) / -slope) + (log10(max(trial3$Diameter))^2)))
+L4 <- 10^(sqrt((log10(max(trial4$Count)) / -slope) + (log10(max(trial4$Diameter))^2)))
+L5 <- 10^(sqrt((log10(max(trial5$Count)) / -slope) + (log10(max(trial5$Diameter))^2)))
+L6 <- 10^(sqrt((log10(max(trial6$Count)) / -slope) + (log10(max(trial6$Diameter))^2)))
+
+# Calculate intercepts for each trial
+intercept2 <- (-0.926 * (-log10(L2)^2))
+intercept3 <- (-0.926 * (-log10(L3)^2))
+intercept4 <- (-0.926 * (-log10(L4)^2))
+intercept5 <- (-0.926 * (-log10(L5)^2))
+intercept6 <- (-0.926 * (-log10(L6)^2))
+
+# Function to calculate predicted values
+predict_values <- function(x, slope, intercept) {
+  10^(slope * log10(x)^2 + intercept)
+}
+
+# Create predicted lines for each trial
+x_range <- seq(min(normalized_counts$Diameter), max(normalized_counts$Diameter), length.out = max(normalized_counts$Diameter))
+predicted_lines <- data.frame(
+  Diameter = rep(x_range, 5),
+  Trial = rep(2:6, each = length(x_range)),
+  Predicted = c(
+    predict_values(x_range, slope, intercept2),
+    predict_values(x_range, slope, intercept3),
+    predict_values(x_range, slope, intercept4),
+    predict_values(x_range, slope, intercept5),
+    predict_values(x_range, slope, intercept6)
+  )
+)
+
+# Plot data with IEST standard lines and predicted lines
+ggplot() +
+  geom_line(data = normalized_counts, aes(x = (log10(Diameter)^2), y = Normalized_Count, color = factor(Trial))) +
+  geom_line(data = predicted_lines, aes(x = (log10(Diameter)^2), y = Predicted, color = factor(Trial)), linetype = "dashed") +
+  scale_y_log10() +
+  labs(x = "Diameter (microns)", y = "Count of Particles (normalized)",
+       title = "Particle Distribution with IEST Standard and Predicted Lines (Trials 2-6)") +
+  theme_minimal() +
+  scale_color_discrete(name = "Trial") 
+
+# Calculate R-squared values
+calculate_rsquared <- function(observed, predicted) {
+  1 - sum((observed - predicted)^2) / sum((observed - mean(observed))^2)
+}
+
+rsquared_values <- normalized_counts %>%
+  group_by(Trial) %>%
+  summarise(
+    R_squared = calculate_rsquared(
+      Normalized_Count,
+      predict_values(Diameter, slope, get(paste0("intercept", normalized_counts$Trial)))
+    )
+  )
+
+kable(rsquared_values, caption = "R-squared values for predicted lines") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+```{r}
+# Function to calculate PCL and offset
+calculate_pcl_offset <- function(data) {
+  # Remove zero counts
+  data_nonzero <- data %>% filter(Normalized_Count > 0)
+  
+  x <- log10(data_nonzero$Diameter)^2
+  y <- log10(data_nonzero$Normalized_Count)
+  
+  # Fit a linear model
+  fit <- lm(y ~ x)
+  
+  # Extract slope and intercept
+  slope <- coef(fit)[2]
+  intercept <- coef(fit)[1]
+  
+  # Calculate PCL and offset
+  PCL <- 10^(sqrt(abs(intercept / slope)))
+  offset <- abs(slope) * log10(PCL)^2 - log10(mean(data_nonzero$Normalized_Count))
+  
+  return(list(PCL = PCL, offset = offset, slope = slope))
+}
+
+# Calculate PCL, offset, and slope for each trial
+trial_results <- normalized_counts %>%
+  group_by(Trial) %>%
+  do(data.frame(calculate_pcl_offset(.)))
+
+# Function to predict counts
+predict_counts <- function(diameter, PCL, offset, slope) {
+  10^(slope * (log10(diameter)^2 - log10(PCL)^2) + offset)
+}
+
+# Create predicted lines for each trial
+x_range <- seq(min(normalized_counts$Diameter), max(normalized_counts$Diameter), length.out = 100)
+predicted_lines <- crossing(
+  Diameter = x_range,
+  Trial = unique(normalized_counts$Trial)
+) %>%
+  left_join(trial_results, by = "Trial") %>%
+  mutate(Predicted = predict_counts(Diameter, PCL, offset, slope))
+
+# Add a small constant to avoid log(0) when plotting
+small_constant <- min(normalized_counts$Normalized_Count[normalized_counts$Normalized_Count > 0]) / 10
+
+# Plot data with predicted lines
+ggplot() +
+  geom_line(data = normalized_counts, aes(x = (log10(Diameter)^2), y = Normalized_Count + small_constant, color = factor(Trial))) +
+  geom_line(data = predicted_lines, aes(x = (log10(Diameter)^2), y = Predicted, color = factor(Trial)), linetype = "dashed") +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(x = "Diameter (microns)", y = "Count of Particles (normalized)",
+       title = "Particle Distribution with Predicted Lines (Trials 2-6)",
+       subtitle = "Note: A small constant has been added to zero counts for visualization") +
+  theme_minimal() +
+  scale_color_discrete(name = "Trial") +
+  annotation_logticks()
+
+# Calculate R-squared values (excluding zero counts)
+calculate_rsquared <- function(observed, predicted) {
+  observed_nonzero <- observed[observed > 0]
+  predicted_nonzero <- predicted[observed > 0]
+  1 - sum((log10(observed_nonzero) - log10(predicted_nonzero))^2) / 
+      sum((log10(observed_nonzero) - mean(log10(observed_nonzero)))^2)
+}
+
+rsquared_values <- normalized_counts %>%
+  left_join(trial_results, by = "Trial") %>%
+  group_by(Trial) %>%
+  summarise(
+    R_squared = calculate_rsquared(
+      Normalized_Count,
+      predict_counts(Diameter, PCL[1], offset[1], slope[1])
+    )
+  )
+
+kable(trial_results, caption = "PCL, Offset, and Slope values for each trial") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+kable(rsquared_values, caption = "R-squared values for predicted lines (excluding zero counts)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+
+
+This graph shows our particle size distribution for Trials 2-5 alongside the IEST standard line. The dashed black line represents the expected distribution according to IEST standards.
+
+## Inter-Trial Analysis
+
+Let's compare some key metrics across trials:
+
+```{r inter_trial_analysis}
+# Calculate mean and standard deviation of Normalized Total Area for each trial
+trial_summary <- all_summary_data %>%
+  group_by(Trial) %>%
+  summarise(
+    Mean_Total.Area = mean(Total.Area),
+    SD_Total.Area = sd(Total.Area),
+    Mean_Count = mean(Count),
+    SD_Count = sd(Count)
+  )
+
+# Plot mean Total Area with error bars
+ggplot(trial_summary, aes(x = factor(Trial), y = Mean_Total.Area)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  geom_errorbar(aes(ymin = Mean_Total.Area - SD_Total.Area, 
+                    ymax = Mean_Total.Area + SD_Total.Area),
+                width = 0.2) +
+  labs(x = "Trial", y = "Mean Total Area",
+       title = "Mean Total Area by Trial with Standard Deviation") +
+  theme_minimal()
+
+# Calculate coefficient of variation for each trial
+cv_by_trial <- all_summary_data %>%
+  group_by(Trial) %>%
+  summarise(CV = sd(Total.Area) / mean(Total.Area) * 100)
+
+kable(cv_by_trial, caption = "Coefficient of Variation by Trial") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# Intra-trial variability
+intra_trial_variability <- all_summary_data %>%
+  group_by(Trial) %>%
+  summarise(
+    Mean_Total.Area = mean(Total.Area),
+    SD_Total.Area = sd(Total.Area),
+    CV_Total.Area = SD_Total.Area / Mean_Total.Area * 100
+  )
+
+kable(intra_trial_variability, caption = "Intra-trial Variability") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# Inter-trial variability
+inter_trial_variability <- all_summary_data %>%
+  group_by(Trial) %>%
+  summarise(Mean_Total.Area = mean(Total.Area)) %>%
+  summarise(
+    Overall_Mean = mean(Mean_Total.Area),
+    Overall_SD = sd(Mean_Total.Area),
+    Overall_CV = Overall_SD / Overall_Mean * 100
+  )
+
+kable(inter_trial_variability, caption = "Inter-trial Variability") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+This analysis shows the mean Normalized Total Area for each trial with error bars representing the standard deviation. The coefficient of variation (CV) provides a measure of relative variability within each trial. We've also calculated intra-trial and inter-trial variability to compare consistency within and between trials.
+
+## Analysis of Cleaning Methods
+
+Let's compare the effectiveness of the two cleaning methods:
+
+```{r cleaning_method_analysis}
+# Compare mean Normalized Total Area by cleaning method
+cleaning_method_summary <- all_summary_data %>%
+  group_by(Cleaning_Method) %>%
+  summarise(
+    Mean_Total_Area = mean(Total.Area),
+    SD_Total_Area = sd(Total.Area)
+  )
+
+kable(cleaning_method_summary, caption = "Summary Statistics by Cleaning Method") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+# Boxplot of Normalized Total Area by cleaning method
+ggplot(all_summary_data, aes(x = Cleaning_Method, y = Total.Area)) +
+  geom_boxplot() +
+  labs(x = "Cleaning Method", y = "Normalized Total Area",
+       title = "Distribution of Normalized Total Area by Cleaning Method") +
+  theme_minimal()
+
+# T-test to compare cleaning methods
+# t_test_result <- t.test(Total.Area ~ Cleaning_Method, data = all_summary_data)
+
+# kable(data.frame(
+#   Statistic = t_test_result$statistic,
+#   P_Value = t_test_result$p.value,
+#   DF = t_test_result$parameter
+# ), caption = "T-test Results: Comparison of Cleaning Methods") %>%
+#   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+This analysis compares the effectiveness of the IPA Rinse and Drag and Wipe cleaning methods. The boxplot shows the distribution of Normalized Total Area for each method, while the t-test results indicate whether there's a significant difference between the two methods.
+
+## Conclusions
+
+Based on our analysis of the edge particle data across Trials 2-5, each with 5 samples, we can draw the following conclusions:
+
+1. The particle size distribution follows a generally expected pattern across all trials, with more small particles than large ones. However, there are noticeable differences between trials, particularly in the range of 10^3 to 10^5 particles, which may indicate variations in contamination levels or cleaning efficacy.
+
+2. The correlation between particle count and normalized total area varies significantly across trials. Trial 3 shows a strong positive correlation (0.8963), while the other trials show moderate to weak positive correlations (Trial 2: 0.4580, Trial 4: 0.3700, Trial 5: 0.3042). This suggests potential differences in particle size distributions or measurement conditions between trials.
+
+3. The ANOVA results indicate statistically significant differences in Normalized Total Area between trials (F = 3.006, p = 0.0295). This points to variations in the contamination process or measurement conditions across different batches of samples.
+
+4. The linear model analysis reveals varying relationships between Count and Normalized Total Area across trials:
+   - Trial 2: Moderate relationship (R-squared = 0.2098)
+   - Trial 3: Strong relationship (R-squared = 0.8034)
+   - Trial 4: Weak relationship (R-squared = 0.1369)
+   - Trial 5: Very weak relationship (R-squared = 0.0926)
+   This suggests that the predictive power of particle count for total area varies considerably between trials.
+
+5. Comparison with the IEST standard reveals that our samples generally follow the expected trend, but with some deviations, particularly in Trials 2 and 3. This suggests varying levels of contamination or cleaning efficacy across trials.
+
+6. The inter-trial analysis highlights significant differences in mean Normalized Total Area and variability between trials:
+   - Trial 2: 1.2948 ± 4.8293
+   - Trial 3: 1.0520 ± 4.2634
+   - Trial 4: 0.5495 ± 1.8039
+   - Trial 5: 0.6137 ± 1.2765
+   These differences could be due to factors such as variations in contamination levels, cleaning processes, or measurement conditions across different batches.
+
+7. The coefficient of variation (CV) for each trial indicates high variability within trials, with Trial 3 showing the highest relative variability (CV = 405.27%) and Trial 5 showing the lowest (CV = 208.00%). This suggests inconsistent results across samples within the same trial.
+
+8. The inter-trial variability analysis shows a moderate level of variation between trials (Overall CV = 40.65%), indicating some inconsistency in the overall contamination or cleaning process across different batches.
+
+9. The analysis of cleaning methods reveals that:
+   - IPA Rinse: Mean Normalized Total Area = 1.1768 ± 4.5604
+   - Drag and Wipe: Mean Normalized Total Area = 0.5830 ± 1.5505
+   The t-test results (t = -2.8549, p = 0.0044) indicate a statistically significant difference between the two cleaning methods, with IPA Rinse showing higher particle counts but also higher variability.
+
+These findings provide insights into the characteristics of edge contamination across multiple trials and samples. The high variability both within and between trials suggests that there are factors influencing the contamination that are not consistent across all batches of samples. The cleaning method comparison indicates that while IPA Rinse may be less effective at removing particles, the results are less consistent than the Drag and Wipe method.
+
+To improve future studies, consider:
+- Investigating the causes of the high variability in Trial 3, which showed both the strongest correlation and the highest CV.
+- Standardizing processes that might introduce variability between trials to reduce inter-trial differences, particularly focusing on the factors that might have led to the lower variability in Trial 5.
+- Examining the environmental and procedural factors that might explain the significant difference in effectiveness and consistency between the IPA Rinse and Drag and Wipe cleaning methods.
+- Collecting metadata about each trial and sample (e.g., environmental conditions, time between contamination and measurement) to help explain some of the observed variations.
+- Increasing the number of samples per trial to get a more reliable estimate of the true contamination levels for each batch, given the high intra-trial variability.
+
+This analysis provides a comprehensive view of your edge contamination data, considering both the individual sample level and the broader trial level. It highlights the need for further investigation into the sources of variability and the factors influencing cleaning efficacy, which should guide future improvements in your contamination control and measurement procedures.

@@ -1,0 +1,664 @@
+---
+title: "Analysis of Surface Before Particle Data with Cleaning Methods"
+author: "Data Analyst"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(reshape2)
+library(ggplot2)
+library(FSA)
+library(knitr)
+library(rstatix)
+library(gridExtra)
+library(cluster)
+library(factoextra)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(purrr)
+library(dtw)
+library(geosphere)
+library(data.table)
+```
+
+# 1. Data Loading and Preprocessing
+
+```{r data_loading}
+# Function to load and process particle data for a single sample
+load_particle_data <- function(trial_number, sample_number) {
+  tryCatch({
+    # Construct file path
+    particle_path <- file.path(
+      "~", "Desktop", "College", "Research", "Dust_Contamination", "Trials", "Data", "Surfaces",
+      sprintf("BefTr%dSa%dSurf", trial_number, sample_number),
+      sprintf("Particles_BefTr%dSa%dSurf.csv", trial_number, sample_number)
+    )
+    
+    # Load particle data
+    particle_data <- read_csv(particle_path)
+    
+    # Preprocess data
+    particle_data <- particle_data[, 2:(ncol(particle_data)-2)]  # Remove columns 1, 15, 16
+    particle_data$Diameter <- sqrt(particle_data$Area / pi) * 2
+    particle_data$Sample <- sample_number
+    particle_data$Trial <- trial_number
+    
+    return(particle_data)
+  }, error = function(e) {
+    message(sprintf("Error loading particle data for Trial %d, Sample %d: %s", trial_number, sample_number, e$message))
+    return(NULL)
+  })
+}
+
+# Function to load and process summary data for a single sample
+load_summary_data <- function(trial_number, sample_number) {
+  tryCatch({
+    # Construct file path
+    summary_path <- file.path(
+      "~", "Desktop", "College", "Research", "Dust_Contamination", "Trials", "Data", "Surfaces",
+      sprintf("BefTr%dSa%dSurf", trial_number, sample_number),
+      sprintf("Summary_BefTr%dSa%dSurf.csv", trial_number, sample_number)
+    )
+    
+    # Load summary data
+    summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
+    
+    # Clean column names and preprocess
+    names(summary_data) <- gsub(" ", "_", names(summary_data))
+    summary_data <- summary_data %>% 
+      drop_na() %>%
+      mutate(
+        Sample = sample_number,
+        Trial = trial_number,
+        Slice_Number = as.integer(substr(Slice, nchar(Slice)-6, nchar(Slice)-4))
+      )
+    
+    return(summary_data)
+  }, error = function(e) {
+    message(sprintf("Error loading summary data for Trial %d, Sample %d: %s", trial_number, sample_number, e$message))
+    return(NULL)
+  })
+}
+
+# Create a list of all combinations of trials and samples
+trial_sample_combinations <- expand.grid(trial = 2:7, sample = 1:5)
+
+# Load data for trials 2-7 and 5 samples in each trial
+all_particle_data <- pmap(trial_sample_combinations, ~load_particle_data(.x, .y))
+all_summary_data <- pmap(trial_sample_combinations, ~load_summary_data(.x, .y))
+
+# Remove NULL entries and combine all data into single data frames
+combined_particle_data <- bind_rows(all_particle_data)
+combined_summary_data <- bind_rows(all_summary_data)
+
+# Add cleaning method information
+add_cleaning_method <- function(data) {
+  data %>%
+    mutate(Cleaning_Method = case_when(
+      Trial %in% c(2, 3) ~ "IPA rinse",
+      Trial %in% c(4, 5) ~ "Drag and wipe",
+      Trial %in% c(6, 7) ~ "First contact",
+      TRUE ~ NA_character_
+    ))
+}
+
+combined_particle_data <- add_cleaning_method(combined_particle_data)
+combined_summary_data <- add_cleaning_method(combined_summary_data)
+
+# Calculate total imaged area for each trial
+image_size <- 600 * 450  # microns^2
+trial_areas <- combined_summary_data %>%
+  group_by(Trial, Cleaning_Method) %>%
+  summarise(
+    Total_Images = n(),
+    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
+    .groups = "drop"
+  )
+
+# Display the trial areas
+kable(trial_areas, caption = "Trial Areas")
+
+# Calculate normalization factors
+normalization_factors <- trial_areas %>%
+  mutate(Normalization_Factor = 0.1 / Total_Area)
+
+# Display the normalization factors
+kable(select(normalization_factors, Trial, Cleaning_Method, Normalization_Factor),
+      caption = "Normalization Factors by Trial and Cleaning Method")
+
+# Function to assign slice number to each particle
+assign_slice_number <- function(particle_counts, summary_data) {
+  summary_data <- summary_data %>% 
+    arrange(Slice_Number) %>%
+    mutate(cumulative_count = cumsum(Count) + 1)
+  
+  findInterval(particle_counts, summary_data$cumulative_count) 
+}
+
+# Assign slice numbers to particles
+combined_particle_data <- combined_particle_data %>%
+  arrange(Trial, Sample) %>%
+  group_by(Trial, Sample) %>%
+  mutate(cumulative_count = row_number()) %>%
+  group_modify(~{
+    summary_data <- combined_summary_data %>%
+      filter(Trial == .y$Trial, Sample == .y$Sample)
+    
+    if (nrow(summary_data) > 0) {
+      .x %>% mutate(Slice_Number = assign_slice_number(cumulative_count, summary_data))
+    } else {
+      .x %>% mutate(Slice_Number = NA_integer_)
+    }
+  }) %>%
+  ungroup()
+
+# Handle edge cases
+combined_particle_data <- combined_particle_data %>%
+  group_by(Trial, Sample) %>%
+  mutate(Slice_Number = if_else(is.na(Slice_Number), max(Slice_Number, na.rm = TRUE), Slice_Number)) %>%
+  ungroup()
+
+# Verification step
+verification <- combined_particle_data %>%
+  group_by(Trial, Sample, Slice_Number) %>%
+  summarise(Particle_Count = n(), .groups = "drop") %>%
+  left_join(
+    combined_summary_data %>% 
+      select(Trial, Sample, Slice_Number, Summary_Count = Count),
+    by = c("Trial", "Sample", "Slice_Number")
+  ) %>%
+  mutate(Difference = Particle_Count - Summary_Count)
+
+print("\nDiscrepancies between particle counts and summary counts:")
+print(filter(verification, Difference != 0))
+
+# Debugging output
+print(sprintf("\nTotal particles: %d", nrow(combined_particle_data)))
+print(sprintf("Total expected particles: %d", sum(combined_summary_data$Count)))
+
+# Remove temporary columns
+combined_particle_data <- select(combined_particle_data, -cumulative_count)
+```
+
+# 2. Particle Characteristic Analysis
+
+```{r particle_characteristics}
+# Function to normalize data
+normalize <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+
+# Prepare data for clustering
+particle_features <- combined_particle_data %>%
+  select(Trial, Sample, Area, Diameter, Circ.) %>%
+  mutate(across(c(Area, Diameter, Circ.), normalize))
+
+# Perform k-means clustering
+set.seed(123)  # for reproducibility
+n_clusters <- 10  # adjust as needed
+kmeans_result <- kmeans(particle_features %>% select(Area, Diameter, Circ.), centers = n_clusters)
+
+# Add cluster assignments to the data
+particle_features$Cluster <- kmeans_result$cluster
+
+# Function to find similar particles across trials
+find_similar_particles <- function(data, threshold = 0.8) {
+  data %>%
+    group_by(Cluster) %>%
+    summarize(
+      Trial = n_distinct(Trial),
+      Sample = n_distinct(Sample),
+      Prevalence = n_distinct(Trial) / max(Trial),
+      Area = mean(Area),
+      Diameter = mean(Diameter),
+      Circ.= mean(Circ.),
+      Count = n()
+    ) %>%
+    filter(Prevalence >= threshold) %>%
+    arrange(desc(Prevalence), desc(Count))
+}
+
+# Find similar particles
+similar_particles <- find_similar_particles(particle_features)
+
+# Print results
+print(kable(similar_particles, caption = "Similar Particles Across Trials"))
+
+# # Visualize clusters
+# cluster_plot <- fviz_cluster(kmeans_result, data = particle_features %>% select(Area, Diameter, Circ.),
+#                              geom = "point",
+#                              ellipse.type = "convex",
+#                              ggtheme = theme_minimal())
+# 
+# print(cluster_plot)
+
+# Analyze distribution of similar particles across trials
+if (nrow(similar_particles) > 0) {
+  similar_cluster <- similar_particles$Cluster[1]
+  trial_distribution <- particle_features %>%
+    filter(Cluster == similar_cluster) %>%
+    group_by(Trial) %>%
+    summarize(Count = n()) %>%
+    mutate(Percentage = Count / sum(Count) * 100)
+  
+  print(kable(trial_distribution, caption = "Distribution of Most Prevalent Similar Particles Across Trials"))
+} else {
+  print("No clusters meeting the similarity threshold were found.")
+}
+```
+
+# 3. Slice-by-Slice Analysis
+
+```{r slice_analysis, fig.width=10, fig.height=8}
+# Create separate graphs for each Sample
+sample_plots <- combined_summary_data %>%
+  split(.$Sample) %>%
+  map(function(sample_data) {
+    similar_particles_sample <- similar_particles %>%
+      left_join(combined_summary_data %>% select(Trial, Sample, Slice_Number, Total_Area),
+                by = c("Trial", "Sample"))
+    
+    ggplot(sample_data, aes(x = Slice_Number, y = Total_Area, color = factor(Trial))) +
+      geom_line() +
+      geom_point(data = similar_particles_sample, 
+                 aes(x = Slice_Number, y = Total_Area, shape = "Similar Particle"),
+                 color = "black", size = 3) +
+      labs(title = paste("Sample", unique(sample_data$Sample)),
+           x = "Slice Number",
+           y = "Total Area",
+           color = "Trial",
+           shape = "Particle Type") +
+      theme_minimal() +
+      theme(legend.position = "bottom")
+  })
+
+# Arrange the plots in a grid
+do.call(grid.arrange, c(sample_plots, ncol = 2))
+
+# Identification of Significant Slices
+# Calculate mean and standard deviation of Total_Area for each Trial and Slice_Number
+slice_stats <- combined_summary_data %>%
+  group_by(Trial, Slice_Number) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    .groups = "drop"
+  )
+
+# Identify slices with significantly large total areas
+significant_slices <- slice_stats %>%
+  group_by(Trial) %>%
+  mutate(
+    Trial_Mean = mean(Mean_Area),
+    Trial_SD = sd(Mean_Area),
+    Is_Significant = Mean_Area > (Trial_Mean + 2 * Trial_SD)
+  ) %>%
+  filter(Is_Significant) %>%
+  arrange(Trial, desc(Mean_Area))
+
+# Create a table of significant slices
+kable(significant_slices %>% 
+        select(Trial, Slice_Number, Mean_Area, SD_Area),
+      caption = "Slices with Significantly Large Total Areas",
+      col.names = c("Trial", "Slice Number", "Mean Total Area", "SD Total Area"),
+      digits = 2)
+
+# Analysis of Common Significant Slices
+# Analyze for similarities across trials
+common_significant_slices <- significant_slices %>%
+  group_by(Slice_Number) %>%
+  summarise(
+    Trials = paste(Trial, collapse = ", "),
+    Count = n(),
+    .groups = "drop"
+  ) %>%
+  filter(Count > 1) %>%
+  arrange(desc(Count))
+
+# Print common significant slices
+if (nrow(common_significant_slices) > 0) {
+  print(kable(common_significant_slices,
+              col.names = c("Slice Number", "Trials", "Number of Occurrences"),
+              caption = "Common Significant Slices Across Trials"))
+} else {
+  cat("No common significant slices found across trials.\n")
+}
+```
+
+# 4. Implementing Sample Alignment with Correct Imaging Pattern
+
+```{r sample_alignment_update, fig.width=12, fig.height=10}
+# Function to assign correct grid coordinates based on Slice_Number
+assign_correct_grid_coordinates <- function(slice_number, width = 63, height = 8) {
+  row <- (slice_number - 1) %/% width
+  col <- (slice_number - 1) %% width
+  
+  if (row %% 2 == 1) {
+    col <- width - 1 - col  # Reverse column order for odd rows
+  }
+  
+  return(list(x = col + 1, y = row + 1))
+}
+
+# Add correct grid coordinates to the combined_summary_data
+combined_summary_data <- combined_summary_data %>%
+  mutate(Grid_Coordinates = map(Slice_Number, assign_correct_grid_coordinates)) %>%
+  mutate(
+    X_Coordinate = map_dbl(Grid_Coordinates, "x"),
+    Y_Coordinate = map_dbl(Grid_Coordinates, "y")
+  )
+
+# Create an updated heatmap function
+create_updated_heatmap <- function(trial_data) {
+  ggplot(trial_data, aes(x = X_Coordinate, y = Y_Coordinate, fill = Total_Area)) +
+    geom_tile() +
+    scale_fill_gradient(low = "white", high = "red") +
+    scale_x_continuous(breaks = seq(1, 63, by = 10)) +
+    scale_y_reverse(breaks = 1:8) +
+    labs(title = paste("Sample", unique(trial_data$Sample), "-", unique(trial_data$Sample)),
+         x = "X Coordinate", y = "Y Coordinate", fill = "Total Area") +
+    theme_minimal() +
+    theme(aspect.ratio = 1/8)  # Adjust aspect ratio to match 63:8
+}
+
+# Create and display updated heatmaps
+updated_heatmaps <- combined_summary_data %>%
+  group_by(Sample) %>%
+  group_map(~ create_updated_heatmap(.x))
+
+# Display heatmaps
+do.call(grid.arrange, c(updated_heatmaps, ncol = 1))
+
+# Analyze consistency of particle distribution across trials
+grid_consistency <- combined_summary_data %>%
+  group_by(X_Coordinate, Y_Coordinate) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    CV = SD_Area / Mean_Area * 100,
+    .groups = "drop"
+  ) %>%
+  arrange(desc(CV))
+
+# Display the top 20 most variable grid positions
+print(kable(head(grid_consistency, 20),
+            caption = "Top 20 Most Variable Grid Positions",
+            col.names = c("X Coordinate", "Y Coordinate", "Mean Total Area", "SD Total Area", "Coefficient of Variation (%)"),
+            digits = 2))
+
+# Identify patterns along the edges
+edge_analysis <- combined_summary_data %>%
+  mutate(
+    Is_Edge = X_Coordinate %in% c(1, 63) | Y_Coordinate %in% c(1, 8)
+  ) %>%
+  group_by(Trial, Is_Edge) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    .groups = "drop"
+  )
+
+print(kable(edge_analysis,
+            caption = "Comparison of Edge vs. Non-Edge Particles",
+            col.names = c("Trial", "Is Edge", "Mean Total Area", "SD Total Area"),
+            digits = 2))
+
+# Analyze horizontal and vertical patterns
+horizontal_pattern <- combined_summary_data %>%
+  group_by(Sample, Y_Coordinate) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    .groups = "drop"
+  )
+
+vertical_pattern <- combined_summary_data %>%
+  group_by(Sample, X_Coordinate) %>%
+  summarise(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area),
+    .groups = "drop"
+  )
+
+# Visualize horizontal patterns
+ggplot(horizontal_pattern, aes(x = Y_Coordinate, y = Mean_Area, color = factor(Sample))) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Horizontal Pattern of Particle Distribution",
+       x = "Y Coordinate (Row)", y = "Mean Total Area", color = "Sample") +
+  theme_minimal()
+
+# Visualize vertical patterns
+ggplot(vertical_pattern, aes(x = X_Coordinate, y = Mean_Area, color = factor(Sample))) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Vertical Pattern of Particle Distribution",
+       x = "X Coordinate (Column)", y = "Mean Total Area", color = "Sample") +
+  theme_minimal()
+```
+
+
+# 5. Sample Alignment and Permanent Feature Identification
+
+```{r sample_alignment}
+# Function to calculate the similarity between two slices
+calculate_slice_similarity <- function(slice1, slice2) {
+  # Use Total_Area as the feature for comparison
+  correlation <- cor(slice1$Total_Area, slice2$Total_Area)
+  return(correlation)
+}
+
+# Function to find the best alignment between two samples
+align_samples <- function(sample1, sample2, max_shift = 10) {
+  best_correlation <- -Inf
+  best_shift <- 0
+  
+  for (shift in -max_shift:max_shift) {
+    shifted_sample2 <- sample2 %>%
+      mutate(Shifted_Slice = Slice_Number + shift) %>%
+      filter(Shifted_Slice >= 1 & Shifted_Slice <= max(Slice_Number))
+    
+    merged_data <- inner_join(sample1, shifted_sample2, 
+                              by = c("Slice_Number" = "Shifted_Slice"))
+    
+    correlation <- cor(merged_data$Total_Area.x, merged_data$Total_Area.y)
+    
+    if (correlation > best_correlation) {
+      best_correlation <- correlation
+      best_shift <- shift
+    }
+  }
+  
+  return(list(shift = best_shift, correlation = best_correlation))
+}
+
+# Perform alignment for samples with the same number across different trials
+sample_alignments <- combined_summary_data %>%
+  group_by(Sample) %>%
+  group_map(function(sample_data, key) {
+    trials <- unique(sample_data$Trial)
+    trial_pairs <- combn(trials, 2, simplify = FALSE)
+    
+    map_dfr(trial_pairs, function(pair) {
+      sample1 <- sample_data %>% filter(Trial == pair[1])
+      sample2 <- sample_data %>% filter(Trial == pair[2])
+      
+      alignment <- align_samples(sample1, sample2)
+      
+      tibble(
+        Sample = key$Sample,
+        Trial1 = pair[1],
+        Trial2 = pair[2],
+        Shift = alignment$shift,
+        Correlation = alignment$correlation
+      )
+    })
+  }) %>%
+  bind_rows()
+
+# Display the alignment results
+kable(sample_alignments, caption = "Sample Alignments Across Trials")
+
+# Function to identify potential permanent features
+identify_permanent_features <- function(data, correlation_threshold = 0.7) {
+  data %>%
+    group_by(Sample, Slice_Number) %>%
+    summarize(
+      Mean_Area = mean(Total_Area),
+      SD_Area = sd(Total_Area),
+      CV = SD_Area / Mean_Area,
+      Consistency = n_distinct(Trial) / n_distinct(data$Trial),
+      .groups = "drop"
+    ) %>%
+    filter(Consistency == 1, CV < 0.2) %>%  # Adjust thresholds as needed
+    arrange(Sample, Slice_Number)
+}
+
+# Identify permanent features
+permanent_features <- identify_permanent_features(combined_summary_data)
+
+# Display permanent features
+kable(permanent_features, caption = "Potential Permanent Features")
+
+# Create a heatmap of aligned samples
+create_aligned_heatmap <- function(data, alignments, sample_num) {
+  sample_data <- data %>% filter(Sample == sample_num)
+  sample_alignments <- alignments %>% filter(Sample == sample_num)
+  
+  # Use the first trial as reference
+  reference_trial <- min(sample_data$Trial)
+  
+  # Apply the alignments to the data
+  aligned_data <- sample_data %>%
+    left_join(
+      sample_alignments %>%
+        filter(Trial1 == reference_trial) %>%
+        select(Trial2, Shift),
+      by = c("Trial" = "Trial2")
+    ) %>%
+    mutate(Aligned_Slice = Slice_Number + coalesce(Shift, 0))
+  
+  # Create the heatmap
+  ggplot(aligned_data, aes(x = Aligned_Slice, y = factor(Trial), fill = Total_Area)) +
+    geom_tile() +
+    scale_fill_gradient(low = "white", high = "red") +
+    labs(title = paste("Aligned Heatmap for Sample", sample_num),
+         x = "Aligned Slice Number", y = "Trial", fill = "Total Area") +
+    theme_minimal() +
+    theme(aspect.ratio = 1/8)
+}
+
+# Create and display aligned heatmaps for each sample
+sample_heatmaps <- lapply(unique(combined_summary_data$Sample), function(sample_num) {
+  create_aligned_heatmap(combined_summary_data, sample_alignments, sample_num)
+})
+
+# Display heatmaps
+for (i in seq_along(sample_heatmaps)) {
+  print(sample_heatmaps[[i]])
+}
+
+# Create a table of matching slices across trials for each sample
+matching_slices <- combined_summary_data %>%
+  group_by(Sample) %>%
+  group_modify(~{
+    sample_align <- sample_alignments %>% filter(Sample == .y$Sample, Trial1 == min(.x$Trial))
+    .x %>%
+      left_join(sample_align, by = c("Trial" = "Trial2")) %>%
+      mutate(Aligned_Slice = Slice_Number + coalesce(Shift, 0)) %>%
+      group_by(Aligned_Slice) %>%
+      summarize(
+        Matching_Trials = paste(sort(unique(Trial)), collapse = ", "),
+        Mean_Total_Area = mean(Total_Area),
+        SD_Total_Area = sd(Total_Area),
+        CV = SD_Total_Area / Mean_Total_Area,
+        .groups = "drop"
+      ) %>%
+      filter(CV < 0.2)  # Adjust threshold as needed
+  })
+
+# Display the matching slices table
+kable(matching_slices, caption = "Matching Slices Across Trials for Each Sample")
+```
+
+```{r}
+
+# Convert dataframes to data.tables
+setDT(combined_summary_data)
+setDT(combined_particle_data)
+setDT(sample_alignments)
+
+# Function to apply alignment efficiently
+apply_alignment <- function(data, alignments, reference_trial) {
+  alignments <- alignments[Trial1 == reference_trial, .(Trial2, Shift)]
+  setnames(alignments, "Trial2", "Trial")
+  
+  data <- merge(data, alignments, by = "Trial", all.x = TRUE)
+  data[is.na(Shift), Shift := 0]
+  data[, Aligned_Slice_Number := Slice_Number + Shift]
+  
+  data[]
+}
+
+# Function to update coordinates
+update_coordinates <- function(slice_number, width = 63, height = 8) {
+  row <- (slice_number - 1) %/% width
+  col <- (slice_number - 1) %% width
+  col <- ifelse(row %% 2 == 1, width - 1 - col, col)
+  list(x = col + 1, y = row + 1)
+}
+
+# Process summary data
+new_combined_summary_data <- combined_summary_data[, {
+  reference_trial <- min(Trial)
+  sample_align <- sample_alignments[Sample == .BY$Sample]
+  aligned_data <- apply_alignment(.SD, sample_align, reference_trial)
+  
+  coords <- aligned_data[, update_coordinates(Aligned_Slice_Number), by = 1:nrow(aligned_data)]
+  aligned_data[, c("New_X_Coordinate", "New_Y_Coordinate") := .(coords$V1, coords$V2)]
+  
+  aligned_data
+}, by = Sample]
+
+# Process particle data in chunks
+chunk_size <- 1e6  # Adjust based on available memory
+new_combined_particle_data <- data.table()
+
+for (sample in unique(combined_particle_data$Sample)) {
+  sample_data <- combined_particle_data[Sample == sample]
+  reference_trial <- min(sample_data$Trial)
+  sample_align <- sample_alignments[Sample == sample]
+  
+  for (i in seq(1, nrow(sample_data), by = chunk_size)) {
+    chunk_end <- min(i + chunk_size - 1, nrow(sample_data))
+    chunk <- sample_data[i:chunk_end]
+    aligned_chunk <- apply_alignment(chunk, sample_align, reference_trial)
+    
+    coords <- aligned_chunk[, update_coordinates(Aligned_Slice_Number), by = 1:nrow(aligned_chunk)]
+    aligned_chunk[, c("New_X_Coordinate", "New_Y_Coordinate") := .(coords$V1, coords$V2)]
+    
+    new_combined_particle_data <- rbindlist(list(new_combined_particle_data, aligned_chunk))
+  }
+}
+
+# Filter for common slices
+common_slices <- new_combined_summary_data[, .N, by = .(Sample, Aligned_Slice_Number)
+                                           ][N == uniqueN(new_combined_summary_data$Trial)]
+
+new_combined_summary_data <- new_combined_summary_data[common_slices, on = .(Sample, Aligned_Slice_Number)]
+new_combined_particle_data <- new_combined_particle_data[common_slices, on = .(Sample, Aligned_Slice_Number)]
+
+# Remove unnecessary columns
+new_combined_summary_data[, c("Grid_Coordinates", "X_Coordinate", "Y_Coordinate") := NULL]
+new_combined_particle_data[, c("X_Coordinate", "Y_Coordinate") := NULL]
+
+```
+
+
+
+

@@ -1,0 +1,609 @@
+---
+title: "Memory-Efficient Comparison of Surface Particle Data: Before vs After Contamination"
+author: "Data Analyst"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(data.table)
+library(ggplot2)
+library(knitr)
+library(rstatix)
+library(gridExtra)
+library(parallel)
+```
+
+## Introduction
+
+This analysis compares the surface particle data before and after contamination, considering different cleaning methods. We use memory-efficient techniques to handle the large dataset.
+
+## Data Loading and Preprocessing
+
+We use data.table for efficient data loading and processing.
+```{r data_loading, warning=FALSE, message=FALSE}
+library(data.table)
+library(parallel)
+library(foreach)
+library(doParallel)
+
+load_data_chunk <- function(condition, trial_range, sample_range) {
+  # Function to load and process particle data for a single sample
+  load_particle_data <- function(trial_number, sample_number) {
+    tryCatch({
+      particle_path <- file.path(
+        "~", "Desktop", "College", "Research", "Dust_Contamination", "Trials", "Data", "Surfaces",
+        sprintf("%sTr%dSa%dSurf", ifelse(condition == "before", "Bef", "Aft"), trial_number, sample_number),
+        sprintf("Particles_%sTr%dSa%dSurf.csv", ifelse(condition == "before", "Bef", "Aft"), trial_number, sample_number)
+      )
+      
+      # Use fread for faster reading
+      particle_data <- fread(particle_path, select = c(2:14))
+      particle_data[, `:=`(
+        Diameter = sqrt(Area / pi) * 2,
+        Sample = sample_number,
+        Trial = trial_number
+      )]
+      
+      return(particle_data)
+    }, error = function(e) {
+      message(sprintf("Error loading particle data for Trial %d, Sample %d: %s", trial_number, sample_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Function to load and process summary data for a single sample
+  load_summary_data <- function(trial_number, sample_number) {
+    tryCatch({
+      summary_path <- file.path(
+        "~", "Desktop", "College", "Research", "Dust_Contamination", "Trials", "Data", "Surfaces",
+        sprintf("%sTr%dSa%dSurf", ifelse(condition == "before", "Bef", "Aft"), trial_number, sample_number),
+        sprintf("Summary_%sTr%dSa%dSurf.csv", ifelse(condition == "before", "Bef", "Aft"), trial_number, sample_number)
+      )
+      
+      # Use fread for faster reading
+      summary_data <- fread(summary_path, select = c(1, 2, 3, 5))
+      setnames(summary_data, c("Slice", "Count", "Total_Area", "Width"))
+      summary_data[, `:=`(
+        Sample = sample_number,
+        Trial = trial_number,
+        Slice_Number = as.integer(substr(Slice, nchar(Slice)-6, nchar(Slice)-4))
+      )]
+      
+      return(summary_data)
+    }, error = function(e) {
+      message(sprintf("Error loading summary data for Trial %d, Sample %d: %s", trial_number, sample_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Create combinations for the current chunk
+  chunk_combinations <- expand.grid(trial = trial_range, sample = sample_range)
+  
+  # Load data for the current chunk
+  chunk_particle_data <- lapply(1:nrow(chunk_combinations), function(i) {
+    load_particle_data(chunk_combinations$trial[i], chunk_combinations$sample[i])
+  })
+  chunk_summary_data <- lapply(1:nrow(chunk_combinations), function(i) {
+    load_summary_data(chunk_combinations$trial[i], chunk_combinations$sample[i])
+  })
+
+  # Combine data for the current chunk
+  combined_chunk_particle_data <- rbindlist(chunk_particle_data)
+  combined_chunk_summary_data <- rbindlist(chunk_summary_data)
+
+  # Add cleaning method information
+  cleaning_method <- data.table(
+    Trial = 2:6,
+    Cleaning_Method = c("IPA rinse", "IPA rinse", "Drag and wipe", "Drag and wipe", "First contact")
+  )
+  
+  combined_chunk_particle_data <- merge(combined_chunk_particle_data, cleaning_method, by = "Trial")
+  combined_chunk_summary_data <- merge(combined_chunk_summary_data, cleaning_method, by = "Trial")
+
+  # Add condition column
+  combined_chunk_particle_data[, Condition := condition]
+  combined_chunk_summary_data[, Condition := condition]
+
+  return(list(particle_data = combined_chunk_particle_data, 
+              summary_data = combined_chunk_summary_data))
+}
+
+# Set up parallel processing
+num_cores <- detectCores() - 1
+cl <- makeCluster(num_cores)
+registerDoParallel(cl)
+
+# Define chunks
+trial_chunks <- list(2:3, 4:5, 6)
+sample_chunks <- list(1:3, 4:5)
+
+# Process data in chunks
+results <- foreach(condition = c("before", "after"), .packages = c("data.table")) %dopar% {
+  chunk_results <- list()
+  for (trial_range in trial_chunks) {
+    for (sample_range in sample_chunks) {
+      chunk_data <- load_data_chunk(condition, trial_range, sample_range)
+      chunk_results <- c(chunk_results, list(chunk_data))
+    }
+  }
+  chunk_results
+}
+
+# Stop parallel processing
+stopCluster(cl)
+
+# Combine all chunks
+combined_particle_data <- rbindlist(lapply(unlist(results, recursive = FALSE), function(x) x$particle_data))
+combined_summary_data <- rbindlist(lapply(unlist(results, recursive = FALSE), function(x) x$summary_data))
+
+# Calculate total imaged area for each trial
+image_size <- 600 * 450  # microns^2
+combined_trial_areas <- combined_summary_data[, .(
+  Total_Images = .N,
+  Total_Area = .N * image_size * 1e-12  # Convert to m^2
+), by = .(Trial, Cleaning_Method, Condition)]
+
+# Calculate normalization factors
+combined_normalization_factors <- combined_trial_areas[, .(
+  Trial,
+  Cleaning_Method,
+  Condition,
+  Normalization_Factor = 0.1 / Total_Area
+)]
+
+# Clean up to free memory
+rm(results)
+gc()
+
+# Print summary of loaded data
+print(paste("Total particle data rows:", nrow(combined_particle_data)))
+print(paste("Total summary data rows:", nrow(combined_summary_data)))
+print(paste("Number of trials:", uniqueN(combined_particle_data$Trial)))
+print(paste("Number of samples per trial:", uniqueN(combined_particle_data$Sample)))
+```
+
+## Comparison of Particle Distributions
+
+We'll compare the overall particle size distributions before and after contamination.
+
+```{r particle_distribution_comparison}
+# Create a sequence of diameter thresholds
+diameter_thresholds <- seq(1, max(combined_particle_data$Diameter), by = 1)
+
+# Function to calculate normalized counts
+get_normalized_counts <- function(data, norm_factors) {
+  sapply(diameter_thresholds, function(x) {
+    data[Diameter > x, .N, by = Trial][
+      norm_factors, on = "Trial"
+    ][, sum(N * Normalization_Factor)]
+  })
+}
+
+# Calculate counts for before and after
+counts <- rbindlist(list(
+  data.table(
+    Condition = "Before",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "before"], 
+                                  combined_normalization_factors[Condition == "before"])
+  ),
+  data.table(
+    Condition = "After",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "after"], 
+                                  combined_normalization_factors[Condition == "after"])
+  )
+))
+
+# Plot the distributions
+ggplot(counts, aes(x = Diameter, y = Count, color = Condition)) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Normalized Count of Particles (log scale)",
+       title = "Distribution of Particle Diameters: Before vs After Contamination",
+       subtitle = "Normalized to 0.1 m^2") +
+  theme_minimal()
+```
+
+## Changes in Particle Counts and Sizes
+
+We'll examine how the total particle count and average particle size changed for each cleaning method.
+
+```{r particle_changes}
+# Calculate summary statistics
+particle_summary <- combined_particle_data[combined_normalization_factors, on = c("Trial", "Condition", "Cleaning_Method")][
+  , .(
+    Total_Particles = sum(Normalization_Factor),
+    Mean_Diameter = mean(Diameter),
+    SD_Diameter = sd(Diameter)
+  ), by = .(Condition, Cleaning_Method)
+]
+
+# Reshape the data to wide format
+particle_summary_wide <- dcast(particle_summary, 
+                               Cleaning_Method ~ Condition, 
+                               value.var = c("Total_Particles", "Mean_Diameter", "SD_Diameter"))
+
+# Calculate changes
+particle_summary_wide[, `:=`(
+  Particle_Increase = Total_Particles_after - Total_Particles_before,
+  Particle_Increase_Percent = ((Total_Particles_after - Total_Particles_before) / Total_Particles_before) * 100,
+  Diameter_Change = Mean_Diameter_after - Mean_Diameter_before
+)]
+
+# Display results
+kable(particle_summary_wide, caption = "Changes in Particle Counts and Sizes by Cleaning Method")
+
+# Visualize the changes
+ggplot(particle_summary_wide, aes(x = Cleaning_Method, y = Particle_Increase_Percent, fill = Cleaning_Method)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Percentage Increase in Particle Count by Cleaning Method",
+       y = "Percent Increase", x = "Cleaning Method") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+## Effectiveness of Cleaning Methods
+
+We'll compare the effectiveness of each cleaning method by examining the change in particle distribution.
+
+```{r cleaning_method_comparison}
+
+# Function to process a chunk of data
+process_chunk <- function(chunk_data, norm_factors, diameter_thresholds) {
+  chunk_data <- merge(chunk_data, norm_factors, by = c("Trial", "Condition", "Cleaning_Method"))
+  
+  chunk_data[, .(
+    Count = sapply(diameter_thresholds, function(x) sum(Diameter > x) * unique(Normalization_Factor))
+  ), by = .(Condition, Cleaning_Method)]
+}
+
+# Define chunk size and diameter thresholds
+chunk_size <- 1e6  # Adjust this value based on your available memory
+diameter_thresholds <- seq(1, max(combined_particle_data$Diameter), length.out = 100)
+
+# Process data in chunks
+counts_by_method <- data.table()
+for (i in seq(1, nrow(combined_particle_data), by = chunk_size)) {
+  chunk_end <- min(i + chunk_size - 1, nrow(combined_particle_data))
+  chunk_data <- combined_particle_data[i:chunk_end]
+  
+  chunk_results <- process_chunk(chunk_data, combined_normalization_factors, diameter_thresholds)
+  counts_by_method <- rbindlist(list(counts_by_method, chunk_results))
+}
+
+# Aggregate results
+counts_by_method <- counts_by_method[, .(Count = sum(Count)), by = .(Condition, Cleaning_Method)]
+
+# Add Diameter column
+counts_by_method <- counts_by_method[, .(
+  Diameter = rep(log10(diameter_thresholds)^2, .N),
+  Count = rep(Count, each = length(diameter_thresholds))
+), by = .(Condition, Cleaning_Method)]
+
+# Plot the distributions
+ggplot(counts, aes(x = Diameter, y = Count, color = Cleaning_Method, alpha = Condition)) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Normalized Count of Particles (log scale)",
+       title = "Particle Distribution by Cleaning Method: Before vs After",
+       subtitle = "Normalized to 0.1 m^2") +
+  theme_minimal()
+
+# Clean up to free memory
+rm(chunk_data, chunk_results)
+gc()
+
+
+# Function to calculate normalized counts
+get_normalized_counts <- function(data, norm_factors) {
+  sapply(diameter_thresholds, function(x) {
+    data[Diameter > x, .N, by = Trial][
+      norm_factors, on = "Trial"
+    ][, sum(N * Normalization_Factor)]
+  })
+}
+
+# Calculate counts for before and after
+counts <- rbindlist(list(
+  data.table(
+    Condition = "Before",
+    Cleaning_Method = "IPA rinse",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "before"], 
+                                  combined_normalization_factors[Condition == "before"])
+  ),
+  data.table(
+    Condition = "Before",
+    Cleaning_Method = "Drag and wipe",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "before"], 
+                                  combined_normalization_factors[Condition == "before"])
+  ),
+  data.table(
+    Condition = "Before",
+    Cleaning_Method = "First contact",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "before"], 
+                                  combined_normalization_factors[Condition == "before"])
+  ),
+  data.table(
+    Condition = "After",
+    Cleaning_Method = "IPA rinse",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "after"], 
+                                  combined_normalization_factors[Condition == "after"])
+  ),
+  data.table(
+    Condition = "After",
+    Cleaning_Method = "Drag and wipe",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "after"], 
+                                  combined_normalization_factors[Condition == "after"])
+  ),
+  data.table(
+    Condition = "After",
+    Cleaning_Method = "First contact",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "after"], 
+                                  combined_normalization_factors[Condition == "after"])
+  )
+))
+
+```
+
+
+```{r}
+counts <- rbindlist(list(
+ data.table(
+    Condition = "Before",
+    Trial = "6",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "before"], 
+                                  combined_normalization_factors[Condition == "before"])
+  ), data.table(
+    Condition = "After",
+    Trial = "5",
+    Diameter = log10(diameter_thresholds)^2,
+    Count = get_normalized_counts(combined_particle_data[Condition == "after"], 
+                                  combined_normalization_factors[Condition == "after"])
+  )
+))
+
+ggplot(counts, aes(x = Diameter, y = Count, color = Trial)) +
+  geom_line() +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Normalized Count of Particles (log scale)",
+       title = "Particle Distribution by Cleaning Method: Before vs After",
+       subtitle = "Normalized to 0.1 m^2") +
+  theme_minimal()
+
+```
+
+
+
+## Statistical Analysis of Changes
+
+We'll perform statistical tests to determine if the changes in particle sizes are significant for each cleaning method.
+
+```{r statistical_analysis}
+# Perform Wilcoxon rank sum test for each cleaning method
+wilcox_results <- combined_particle_data[, .(
+  statistic = wilcox.test(Diameter ~ Condition)$statistic,
+  p.value = wilcox.test(Diameter ~ Condition)$p.value
+), by = Cleaning_Method]
+
+wilcox_results[, `:=`(
+  p.adjust = p.adjust(p.value, method = "bonferroni"),
+  significance = ifelse(p.adjust < 0.001, "***",
+                 ifelse(p.adjust < 0.01, "**",
+                 ifelse(p.adjust < 0.05, "*", "ns")))
+)]
+
+kable(wilcox_results, caption = "Wilcoxon Rank Sum Test Results by Cleaning Method")
+```
+
+## Comparison to IEST Standards
+
+We'll compare how the adherence to IEST standards changed before and after contamination.
+
+```{r iest_comparison}
+# Define IEST standard parameters
+slope <- -0.926
+
+# Function to calculate IEST line parameters
+calculate_iest_params <- function(data) {
+  L <- 10^(sqrt((log10(max(data$Count)) / -slope) + (log10(max(data$Diameter))^2)))
+  intercept <- (-0.926 * (-log10(L)^2))
+  data.table(L = L, intercept = intercept)
+}
+
+# Calculate IEST parameters for before and after
+iest_params <- counts_by_method[, calculate_iest_params(.SD), by = .(Condition, Cleaning_Method)]
+
+# Plot comparison to IEST standards
+ggplot() +
+  geom_line(data = counts_by_method, aes(x = Diameter, y = Count, color = Condition)) +
+  geom_abline(data = iest_params, aes(slope = slope, intercept = intercept, linetype = Condition), color = "black") +
+  facet_wrap(~Cleaning_Method) +
+  scale_y_log10() +
+  labs(x = "Diameter (log(microns)^2)", y = "Normalized Count of Particles (log scale)",
+       title = "Comparison to IEST Standards: Before vs After",
+       subtitle = "Normalized to 0.1 m^2") +
+  theme_minimal()
+```
+
+## Spatial Distribution Analysis
+
+We'll compare the spatial distribution of particles before and after contamination.
+
+```{r spatial_distribution}
+# Function to assign correct grid coordinates based on Slice_Number
+assign_correct_grid_coordinates <- function(slice_number, width = 63, height = 8) {
+  row <- (slice_number - 1) %/% width
+  col <- (slice_number - 1) %% width
+  
+  if (row %% 2 == 1) {
+    col <- width - 1 - col  # Reverse column order for odd rows
+  }
+  
+  list(x = col + 1, y = row + 1)
+}
+
+# Add correct grid coordinates to the combined_summary_data
+combined_summary_data[, c("X_Coordinate", "Y_Coordinate") := assign_correct_grid_coordinates(Slice_Number)]
+
+# Create an updated heatmap function
+create_updated_heatmap <- function(trial_data) {
+  ggplot(trial_data, aes(x = X_Coordinate, y = Y_Coordinate, fill = Total_Area)) +
+    geom_tile() +
+    scale_fill_gradient(low = "white", high = "red") +
+    scale_x_continuous(breaks = seq(1, 63, by = 10)) +
+    scale_y_reverse(breaks = 1:8) +
+    labs(title = paste("Trial", unique(trial_data$Trial), "-", unique(trial_data$Cleaning_Method), "-", unique(trial_data$Condition)),
+         x = "X Coordinate", y = "Y Coordinate", fill = "Total Area") +
+    theme_minimal() +
+    theme(aspect.ratio = 1/8)  # Adjust aspect ratio to match 63:8
+}
+
+# Create and display updated heatmaps for before and after
+before_heatmaps <- combined_summary_data[Condition == "before", 
+                                         create_updated_heatmap(.SD),by = Trial]
+
+after_heatmaps <- combined_summary_data[Condition == "after", 
+                                        create_updated_heatmap(.SD), 
+                                        by = Trial]
+
+# Display heatmaps
+do.call(grid.arrange, c(before_heatmaps, ncol = 1))
+do.call(grid.arrange, c(after_heatmaps, ncol = 1))
+
+# Analyze changes in spatial distribution
+spatial_changes <- combined_summary_data[, .(
+    Before_Area = sum(Total_Area[Condition == "before"]),
+    After_Area = sum(Total_Area[Condition == "after"]),
+    Area_Change = After_Area - Before_Area
+  ), by = .(Trial, Cleaning_Method, X_Coordinate, Y_Coordinate)]
+
+# Create heatmap of spatial changes
+ggplot(spatial_changes, aes(x = X_Coordinate, y = Y_Coordinate, fill = Area_Change)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  facet_wrap(~Cleaning_Method) +
+  scale_x_continuous(breaks = seq(1, 63, by = 10)) +
+  scale_y_reverse(breaks = 1:8) +
+  labs(title = "Spatial Distribution of Particle Area Changes",
+       x = "X Coordinate", y = "Y Coordinate", fill = "Area Change") +
+  theme_minimal() +
+  theme(aspect.ratio = 1/8)
+```
+
+## Edge Effect Analysis
+
+We'll compare the edge effects before and after contamination.
+
+```{r edge_effect}
+edge_analysis <- combined_summary_data[, `:=`(
+    Is_Edge = X_Coordinate %in% c(1, 63) | Y_Coordinate %in% c(1, 8)
+  )][, .(
+    Mean_Area = mean(Total_Area),
+    SD_Area = sd(Total_Area)
+  ), by = .(Condition, Trial, Cleaning_Method, Is_Edge)]
+
+# Calculate the change in edge effect
+edge_effect_change <- dcast(edge_analysis, 
+                            Trial + Cleaning_Method + Is_Edge ~ Condition, 
+                            value.var = c("Mean_Area", "SD_Area"))
+edge_effect_change[, `:=`(
+  Mean_Area_Change = Mean_Area_after - Mean_Area_before,
+  SD_Area_Change = SD_Area_after - SD_Area_before
+)]
+
+kable(edge_effect_change, caption = "Changes in Edge Effects by Cleaning Method")
+
+# Visualize edge effect changes
+ggplot(edge_effect_change, aes(x = Cleaning_Method, y = Mean_Area_Change, fill = Is_Edge)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Changes in Edge Effects by Cleaning Method",
+       x = "Cleaning Method", y = "Change in Mean Total Area",
+       fill = "Edge") +
+  theme_minimal()
+```
+
+## Memory Usage Analysis
+
+Let's check the memory usage of our data objects to ensure our analysis is memory-efficient.
+
+```{r memory_usage}
+print_size <- function(x) {
+  size <- object.size(x)
+  print(paste0(deparse(substitute(x)), ": ", format(size, units = "auto")))
+}
+
+print_size(combined_particle_data)
+print_size(combined_summary_data)
+print_size(combined_trial_areas)
+print_size(combined_normalization_factors)
+```
+
+## Conclusions
+
+Based on our comparative analysis of the surface particle data before and after contamination, we can draw the following conclusions:
+
+1. Overall Particle Distribution:
+   - [Describe the main differences observed in the overall particle distribution graph]
+   - [Comment on any shifts in the distribution curve or changes in the slope]
+
+2. Changes in Particle Counts and Sizes:
+   - [Summarize the key findings from the particle count and size change analysis]
+   - [Highlight which cleaning method showed the most/least increase in particle count]
+   - [Discuss any notable changes in mean particle diameter]
+
+3. Effectiveness of Cleaning Methods:
+   - [Discuss the relative effectiveness of each cleaning method based on the changes observed]
+   - [Highlight any method that performed notably better or worse than the others]
+   - [Comment on the consistency of each method across different particle sizes]
+
+4. Statistical Significance:
+   - [Summarize the results of the Wilcoxon rank sum tests]
+   - [Indicate which cleaning methods showed statistically significant changes in particle sizes]
+   - [Discuss the implications of these statistical results]
+
+5. IEST Standards Comparison:
+   - [Describe how the adherence to IEST standards changed before and after contamination]
+   - [Highlight any cleaning methods that showed better or worse alignment with IEST standards after contamination]
+   - [Discuss the implications of these changes for cleanliness standards]
+
+6. Spatial Distribution:
+   - [Describe any notable patterns or changes in the spatial distribution of particles]
+   - [Highlight areas that consistently showed high or low particle concentrations]
+   - [Discuss any differences in spatial distribution patterns between cleaning methods]
+
+7. Edge Effects:
+   - [Summarize the changes in edge effects before and after contamination]
+   - [Discuss which cleaning methods were most effective at addressing edge contamination]
+   - [Consider the implications of edge effects for overall surface cleanliness]
+
+8. Memory Efficiency:
+   - [Comment on the memory usage of the analysis]
+   - [Discuss any improvements in memory efficiency compared to previous analyses]
+   - [Suggest any further optimizations that could be made]
+
+9. Implications and Recommendations:
+   - [Provide insights on what these results mean for the effectiveness of the cleaning methods]
+   - [Suggest any recommendations for improving the cleaning process]
+   - [Propose areas for further investigation or future studies]
+   - [Discuss potential modifications to cleaning protocols based on the findings]
+
+10. Limitations and Future Work:
+    - [Acknowledge any limitations in the current analysis]
+    - [Suggest potential improvements or extensions for future studies]
+    - [Propose any additional data collection or analysis that could provide further insights]
+
+This memory-efficient comparison of surface particle contamination before and after the cleaning process provides valuable insights into the effectiveness of different cleaning methods. The findings can be used to optimize cleaning procedures, improve contamination control strategies, and enhance overall cleanliness in particle-sensitive environments.
+
+The analysis reveals [summarize 2-3 key findings], suggesting that [provide a high-level conclusion about cleaning method effectiveness]. Future work should focus on [suggest 1-2 key areas for further investigation or improvement].
+
+By continuing to refine these cleaning methods and analysis techniques, we can work towards more effective contamination control and improved cleanliness standards in critical applications. The memory-efficient approach used in this analysis allows for processing of large datasets, enabling more comprehensive studies in the future.
