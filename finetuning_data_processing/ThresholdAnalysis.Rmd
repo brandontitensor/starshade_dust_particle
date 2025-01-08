@@ -23,8 +23,32 @@ edge_data <- read_csv("~/Desktop/College/Research/Dust_Contamination/Trials/Data
   mutate(Type = "Edge")
 
 # Read and process surface data
-surface_data <- read_csv("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Surfaces/combined_surface_analysis.csv") %>%
+surface_data <- read_csv("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Surfaces/combined_surface_analysis.csv",
+  col_types = cols(
+    Folder = col_character(),
+    Image = col_character(),
+    Threshold = col_double(),
+    Area = col_double(),
+    `Perim.` = col_double(),
+    BX = col_double(),
+    BY = col_double(),
+    Width = col_double(),
+    Height = col_double(),
+    `Circ.` = col_double(),
+    Feret = col_double(),
+    FeretX = col_double(),
+    FeretY = col_double(),
+    FeretAngle = col_double(),
+    MinFeret = col_double(),
+    AR = col_double(),
+    Round = col_double(),
+    Solidity = col_double()
+  )
+) %>%
   mutate(
+    # Handle any remaining NaN values
+    across(where(is.numeric), ~replace(., is.na(.), 0)),
+    # Create Treatment column
     Treatment = case_when(
       str_starts(Folder, "Bef") ~ "Before",
       str_starts(Folder, "Aft") ~ "After",
@@ -33,6 +57,8 @@ surface_data <- read_csv("~/Desktop/College/Research/Dust_Contamination/Trials/D
   ) %>%
   filter(Treatment != "Unknown") %>%
   mutate(Type = paste("Surface", Treatment))
+
+
 
 # Combine all data
 all_data <- bind_rows(
@@ -225,6 +251,10 @@ print(head(edge_results$stability_score %>%
 
 # Surface Images Analysis - Before Treatment
 ```{r surface_before_analysis}
+surface_data <- surface_data %>% 
+  mutate(Area = as.double(Area),
+         Threshold = as.double(Threshold))
+
 surface_before_data <- surface_data %>% 
   filter(Treatment == "Before")
 
