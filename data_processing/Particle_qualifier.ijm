@@ -92,8 +92,8 @@ function qualifyEdgeParticles(folder) {
     sampleNumber = substring(folderName, 4, indexOf(folderName, " minus"));
     
     // Construct full paths
-    particlesFile = folder + "Particles_Reanalysis_Bef_" + sampleNumber + " minus Aft_" + sampleNumber + ".csv";
-    summaryFile = folder + "Summary_Reanalysis_Bef_" + sampleNumber + " minus Aft_" + sampleNumber + "_updated.csv";
+    particlesFile = folder + "Particles Bef_" + sampleNumber + " minus Aft_" + sampleNumber + ".csv";
+    summaryFile = folder + "Summary Bef_" + sampleNumber + " minus Aft_" + sampleNumber + "_updated.csv";
     edgeCoordDir = folder + "Processed Images" + File.separator + "NewEdgeCoordinates" + File.separator;
     
     // Print paths for debugging
