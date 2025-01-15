@@ -87,7 +87,7 @@ load_sample_data <- function(sample_number) {
 }
 
 # Load data for samples 26-50 (Trials 6-10, 5 samples each)
-edge_data <- map(c(36:50), load_sample_data)
+edge_data <- map(c(36:55), load_sample_data)
 
 # Combine all particle data
 edge_particles_data <- bind_rows(map(edge_data, "particles"))
@@ -958,23 +958,23 @@ comparison_all_models <- average_edge_counts %>%
   ) 
 
 # Ratio comparison plot
-ggplot() +
-  geom_line(data = comparison_all_models, 
-            aes(x = log10(Diameter)^2, y = Observed_by_Modeled),
-            color = trial_colors["6"]) +
-  geom_line(data = comparison_all_models, 
-            aes(x = log10(Diameter)^2, y = Observed_by_Calibration),
-            color = trial_colors["8"]) +
-  geom_line(data = comparison_all_models, 
-            aes(x = log10(Diameter)^2, y = Ratio),
-            color = trial_colors["9"]) +
-  labs(
-    x = expression(log[10](Diameter)^2~"(microns)"),
-    y = "Ratio",
-    title = "Ratio of Particles per Experiment",
-    subtitle = "Comparison of measurement methods against theoretical ratio"
-  ) +
-  custom_theme
+# ggplot() +
+#   geom_line(data = comparison_all_models, 
+#             aes(x = log10(Diameter)^2, y = Observed_by_Modeled),
+#             color = trial_colors["6"]) +
+#   geom_line(data = comparison_all_models, 
+#             aes(x = log10(Diameter)^2, y = Observed_by_Calibration),
+#             color = trial_colors["8"]) +
+#   geom_line(data = comparison_all_models, 
+#             aes(x = log10(Diameter)^2, y = Ratio),
+#             color = trial_colors["9"]) +
+#   labs(
+#     x = expression(log[10](Diameter)^2~"(microns)"),
+#     y = "Ratio",
+#     title = "Ratio of Particles per Experiment",
+#     subtitle = "Comparison of measurement methods against theoretical ratio"
+#   ) +
+#   custom_theme
 
 # Model comparison table
 model_comparison_table <- comparison_all_models %>% summary()
