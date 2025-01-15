@@ -857,7 +857,6 @@ kable(model_best_fits %>%
 ## 6. Combined Analysis and Comparison
 
 ```{r combined_plot, fig.width=10, fig.height=6}
-## 6. Combined Analysis and Comparison
 # Create a combined plot with observed data, edge model, and calibration data
 ggplot() +
   # Observed data
@@ -880,7 +879,7 @@ ggplot() +
     x = expression(log[10](Diameter)^2~"(microns)"),
     y = "log10(Particle Count)",
     title = "Distribution of Particles by Trial",
-    subtitle = "Model comparison across different measurement methods"
+    subtitle = "Solid: Observed, Dashed: Edge Model, Dotted: Calibration"
   ) +
   custom_theme
 
@@ -929,7 +928,7 @@ ggplot() +
     x = expression(log[10](Diameter)^2~"(microns)"),
     y = "log10(Particle Count)",
     title = "Distribution of Particles by Model",
-    subtitle = "Comparison of different measurement methods with adhesion factors"
+    subtitle = "Red: Observed Edge Counts, Blue: Modeled Edge Counts, Green: Observed Calibration Counts, \n Blue-dashed: Modeled Edge Counts with Adhesion Factor, Green-dashed: Observed Calibration Counts with Adhesion Factor"
   ) +
   custom_theme
 

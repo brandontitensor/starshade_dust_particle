@@ -1,10 +1,9 @@
 ---
-title: "Edge Comparison Analysis: Trials 8-10 (Area-Based)"
+title: "Area_based_analysis"
 author: "Brandon Titensor"
-date: "`r Sys.Date()`"
-output: pdf_document
+date: "2025-01-08"
+output: html_document
 ---
-
 
 ```{r setup, include=FALSE}
 # Load required libraries
@@ -19,6 +18,40 @@ library(cowplot)
 library(ggplot2)
 library(dplyr)
 library(grid)
+library(fs)
+
+# Create unified theme
+custom_theme <- theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 8),
+    legend.position = "bottom",
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  )
+
+# Define consistent color palette
+trial_colors <- c(
+  "6" = "#E41A1C",  # red
+  "7" = "#FF7F00",  # orange
+  "8" = "#377EB8",  # blue
+  "9" = "#4DAF4A",  # green
+  "10" = "#984EA3", # purple
+  "11" = "#CEB180"  # tan
+)
+
+# Define consistent line types
+line_types <- c(
+  "Observed" = "solid",
+  "Modeled" = "dashed",
+  "Calibration" = "dotted"
+)
+
+
 ```
 
 ## 1. Data Loading and Preprocessing
@@ -32,13 +65,14 @@ load_sample_data <- function(sample_number) {
   sample_str <- sprintf("%02d", sample_number)
   
   # Construct file paths for particles and summary data
-  particles_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
-  summary_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
+  particles_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", 
+                          sample_str, sample_str, sample_str, sample_str)
+  summary_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", 
+                         sample_str, sample_str, sample_str, sample_str)
   
   # Load and preprocess particle data
   particles_data <- read.csv(particles_path)
   particles_data$Sample <- sample_number
-  particles_data$Area <- particles_data$Area  # Keep original area
   
   # Load and preprocess summary data
   summary_data <- read.csv(summary_path)
@@ -55,7 +89,7 @@ load_sample_data <- function(sample_number) {
   list(particles = particles_data, summary = summary_data)
 }
 
-# Load data for samples 36-50 (Trials 8-10, 5 samples each)
+# Load data for samples 36-50 (Trials 6-10, 5 samples each)
 edge_data <- map(c(36:50), load_sample_data)
 
 # Combine all particle data
@@ -76,40 +110,37 @@ total_width_by_trial <- edge_summary_data %>%
 # Calculate the normalization factor
 max_width <- max(total_width_by_trial$Total_Width)
 normalization_factors <- max_width / total_width_by_trial$Total_Width
-
-# Clean up temporary data
-rm(edge_data)
 ```
 
 ### 1.2 Surface Data
 
 ```{r load_surface_data}
-# Function to load and process surface data (either before or after)
+# Function to load and process surface data
 load_data <- function(condition) {
   # Function to load and process particle data for a single sample
   load_particle_data <- function(trial_number, sample_number, cond) {
     tryCatch({
       particle_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Particles_%sTr%dSa%dSurf.csv", 
-                               cond, trial_number, sample_number, cond, trial_number, sample_number)
+                             cond, trial_number, sample_number, cond, trial_number, sample_number)
       
       particle_data <- read_csv(particle_path)
       particle_data <- particle_data[, 2:(ncol(particle_data)-2)]
-      particle_data$Area <- particle_data$Area  # Keep original area
       particle_data$Sample <- sample_number
       particle_data$Trial <- trial_number
       
       return(particle_data)
     }, error = function(e) {
-      message(sprintf("Error loading particle data for %s Trial %d, Sample %d: %s", cond, trial_number, sample_number, e$message))
+      message(sprintf("Error loading particle data for %s Trial %d, Sample %d: %s", 
+                     cond, trial_number, sample_number, e$message))
       return(NULL)
     })
   }
 
-  # Function to load and process summary data for a single sample
+  # Load and process summary data
   load_summary_data <- function(trial_number, sample_number, cond) {
     tryCatch({
       summary_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Summary_%sTr%dSa%dSurf.csv", 
-                              cond, trial_number, sample_number, cond, trial_number, sample_number)
+                            cond, trial_number, sample_number, cond, trial_number, sample_number)
       
       summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
       names(summary_data) <- make.names(names(summary_data))
@@ -123,18 +154,19 @@ load_data <- function(condition) {
       
       return(summary_data)
     }, error = function(e) {
-      message(sprintf("Error loading summary data for %s Trial %d, Sample %d: %s", cond, trial_number, sample_number, e$message))
+      message(sprintf("Error loading summary data for %s Trial %d, Sample %d: %s", 
+                     cond, trial_number, sample_number, e$message))
       return(NULL)
     })
   }
 
-  # Load data for trials 8-10 and 5 samples in each trial
-  surface_particle_data <- map2(rep(8:10, each = 5), rep(1:5, times = 3), 
-                            ~load_particle_data(.x, .y, condition))
-  surface_summary_data <- map2(rep(8:10, each = 5), rep(1:5, times = 3), 
-                           ~load_summary_data(.x, .y, condition))
+  # Load data for trials 8-11
+  surface_particle_data <- map2(rep(8:11, each = 5), rep(1:5, times = 4), 
+                              ~load_particle_data(.x, .y, condition))
+  surface_summary_data <- map2(rep(8:11, each = 5), rep(1:5, times = 4), 
+                             ~load_summary_data(.x, .y, condition))
 
-  # Combine all data into single data frames
+  # Combine all data
   surface_particle_data <- bind_rows(surface_particle_data)
   surface_summary_data <- bind_rows(surface_summary_data)
 
@@ -145,7 +177,7 @@ load_data <- function(condition) {
         Trial %in% c(2, 3) ~ "IPA rinse",
         Trial %in% c(4, 5) ~ "Drag and wipe",
         Trial %in% c(6, 7) ~ "First contact",
-        Trial %in% c(8, 9, 10) ~ "First contact & Drag and wipe",
+        Trial %in% c(8, 9, 10, 11) ~ "First contact & Drag and wipe",
         TRUE ~ NA_character_
       ))
   }
@@ -153,7 +185,7 @@ load_data <- function(condition) {
   surface_particle_data <- add_cleaning_method(surface_particle_data)
   surface_summary_data <- add_cleaning_method(surface_summary_data)
 
-  # Calculate total imaged area for each trial
+  # Calculate imaged areas
   image_size <- 600 * 450 # microns^2
   trial_areas <- surface_summary_data %>%
     group_by(Trial, Cleaning_Method) %>%
@@ -162,12 +194,6 @@ load_data <- function(condition) {
       Total_Area = Total_Images * image_size * 1e-12, # Convert to m^2
       .groups = "drop"
     )
-
-  # Normalize particle counts to represent 0.1 m^2
-  normalization_factor <- 0.1 / trial_areas$Total_Area
-  surface_particle_data <- surface_particle_data %>%
-    left_join(trial_areas, by = c("Trial", "Cleaning_Method")) %>%
-    mutate(Normalized_Count = normalization_factor[Trial - 1])
 
   list(particle_data = surface_particle_data, 
        summary_data = surface_summary_data, 
@@ -178,27 +204,24 @@ load_data <- function(condition) {
 surface_before_data <- load_data("Bef")
 surface_after_data <- load_data("Aft")
 ```
-
 ### 1.3 Calibration Wafer Data
 
 ```{r load_calibration_data}
 # Function to load and process calibration wafer data
-load_sample_data <- function(sample_number) {
+load_calibration_data <- function(sample_number) {
   # Format sample number with leading zeros
   sample_str <- sprintf("%02d", sample_number)
   
   # Construct file paths
-  particles_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
-  summary_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
+  particles_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Particles_Reanalysis_Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
+  summary_path <- sprintf("~/Desktop/College/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Summary_Reanalysis_Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
   
   # Load particle data
   particles_data <- read.csv(particles_path)
   particles_data$Sample <- sample_number
-  particles_data$Area <- particles_data$Area  # Keep original area
   
   # Load summary data
   summary_data <- read.csv(summary_path)
-  summary_data <- summary_data
   names(summary_data) <- make.names(names(summary_data))
   summary_data$Count <- as.numeric(gsub("[^0-9.]", "", summary_data$Count))
   summary_data$width <- as.numeric(gsub("[^0-9.]", "", summary_data$width))
@@ -208,12 +231,11 @@ load_sample_data <- function(sample_number) {
   list(particles = particles_data, summary = summary_data)
 }
 
-# Load data for calibration samples
-calibration_data <- map(c(11:25), load_sample_data)
+# Load data for calibration samples (11-25)
+calibration_data <- map(c(11:25), load_calibration_data)
 
 # Combine all particle data
-calibration_particles_data <- bind_rows(map(calibration_data, "particles")) %>%
-  filter(IsQualified == 1)  # Only use qualified particles
+calibration_particles_data <- bind_rows(map(calibration_data, "particles"))
 
 # Combine all summary data
 calibration_summary_data <- bind_rows(map(calibration_data, "summary"))
@@ -222,40 +244,26 @@ calibration_summary_data <- bind_rows(map(calibration_data, "summary"))
 calibration_particles_data$Trial <- ceiling((calibration_particles_data$Sample - 5) / 5) + 1
 calibration_summary_data$Trial <- ceiling((calibration_summary_data$Sample - 5) / 5) + 1
 
-# Calculate total width and normalization factors for each trial
+# Calculate total width and normalization factors
 total_width_by_trial <- calibration_summary_data %>%
   group_by(Trial) %>%
-  summarise(Total_Width = sum(width))
+  summarise(Total_Width = sum(edge_width))
 
 calibration_max_width <- max_width
 calibration_normalization_factors <- calibration_max_width / total_width_by_trial$Total_Width
 
-# Clean up temporary data
 rm(calibration_data)
 ```
 
+## 2. Surface Area Distribution Analysis
 
-## 2. Surface Size Distribution Analysis
+```{r surface_area_distribution_analysis}
+surface_before_particles <- surface_before_data$particle_data 
+surface_after_particles <- surface_after_data$particle_data 
+combined_surface_data <- bind_rows(surface_before_particles,surface_after_particles)
 
-```{r surface_size_distribution_analysis}
-# Extract particle data
-surface_before_particle_data <- surface_before_data$particle_data
-surface_after_particle_data <- surface_after_data$particle_data
-
-surface_before_particle_data <- surface_before_particle_data %>% 
-  mutate(Area = Area * (1/.043))
-
-surface_after_particle_data <- surface_after_particle_data %>% 
-  mutate(Area = Area * (1/.043))
-
-
-# Combine before and after surface data
-combined_surface_data <- bind_rows(surface_before_particle_data, surface_after_particle_data)
-
-
-
-# Create a sequence of diameter thresholds
-area_thresholds <- seq(1, max(combined_surface_data$Area), by = 1)
+# Create diameter thresholds
+area_thresholds <- seq(1, max(combined_surface_data$Area), by = 10)
 
 # Define IEST standard parameters and calculate sample areas
 slope <- -0.926
@@ -268,531 +276,464 @@ new_sample_areas <- surface_before_data$summary_data %>%
     .groups = "drop"
   )
 
-# Functions to calculate normalized counts and areas
-get_reg_counts <- function(data, trial_area) {
-  tryCatch({
-    sapply(area_thresholds, function(x) {
-      sum(data$area > (x*100) - 100 & data$area <= (x*100)) * (0.1 / trial_area)
-    })
-  }, error = function(e) {
-    message("Error in get_normalized_counts: ", e$message)
-    message("Data structure: ", str(data))
-    message("Trial area: ", trial_area)
-    return(NULL)
-  })
-}
-# 
-# get_reg_area <- function(data, trial_area) {
-#  tryCatch({
-#     sapply(diameter_thresholds, function(x) {
-#       sum(data$Area[data$Diameter > x - 1 & data$Diameter <= x], na.rm = TRUE) * (0.1 / trial_area)
-#     })
-#   }, error = function(e) {
-#     message("Error in get_reg_counts: ", e$message)
-#     message("Data structure: ", str(data))
-#     message("Trial area: ", trial_area)
-#     return(NULL)
-#   })
-# }
 
-# Calculate normalized counts and areas for before and after data
-before_counts_samp <- tryCatch({
-  surface_before_particle_data %>%
-    group_by(Sample, Trial, Cleaning_Method) %>%
-    group_modify(~ {
-          trial_area <- new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
-      counts <- get_reg_counts(.x, trial_area)
-      if (is.null(counts)) {
-        return(NULL)
-      }
-      data.frame(
-        Area = area_thresholds,
-        Count = counts
-      )
-    }) %>%
-    ungroup()
-}, error = function(e) {
-  message("Error in before_iest_counts calculation: ", e$message)
-  return(NULL)
-})
-
-
-# Optimized version using data.table for faster computation
-get_reg_counts_fast <- function(data_dt, trial_area) {
-  tryCatch({
-    # Convert input to data.table if not already
-    if (!is.data.table(data_dt)) {
-      setDT(data_dt)
-    }
-    
-    # Pre-calculate normalization factor
-    norm_factor <- 0.1 / trial_area
-    
-    # Create bins using cut
-    data_dt[, bin := cut(area, 
-                        breaks = c(-Inf, area_thresholds), 
-                        labels = area_thresholds,
-                        right = TRUE)]
-    
-    # Count particles in each bin and normalize
-    counts <- data_dt[, .N, by = bin][order(bin)]
-    counts[, count := N * norm_factor]
-    
-    return(counts$count)
-  }, error = function(e) {
-    message("Error in get_normalized_counts: ", e$message)
-    return(NULL)
+# Function to get area-based counts
+get_area_counts <- function(data, normalization_factor) {
+  sapply(area_thresholds, function(x) {
+    sum(data$Area > x) * normalization_factor
   })
 }
 
-# Optimized version of before_counts_samp using data.table
-calculate_before_counts_fast <- function(particle_data, sample_areas) {
-  tryCatch({
-    # Convert inputs to data.table
-    setDT(particle_data)
-    setDT(sample_areas)
-    
-    # Create a join key for trial areas
-    setkey(sample_areas, Sample, Trial)
-    
-    # Perform the counting operation by group
-    results <- particle_data[, {
-      current_area <- sample_areas[.BY, Total_Area]
-      counts <- get_reg_counts_fast(.SD, current_area)
-      
-      if (!is.null(counts)) {
-        data.table(
-          Area = area_thresholds,
-          Count = counts
-        )
-      }
-    }, by = .(Sample, Trial, Cleaning_Method)]
-    
-    return(results)
-  }, error = function(e) {
-    message("Error in before counts calculation: ", e$message)
-    return(NULL)
+
+
+# Calculate area-based counts for before and after data
+surface_before_counts <- surface_before_data$particle_data %>%
+  group_by(Trial, Sample) %>%
+  group_modify(~ {
+    norm_factor <- 0.1 /  new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
+    counts <- get_area_counts(.x, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
+    )
   })
-}
 
-# Usage example:
-# Convert your data to data.table format first
-setDT(surface_before_particle_data)
-setDT(new_sample_areas)
+surface_after_counts <- surface_after_data$particle_data %>%
+  group_by(Trial, Sample) %>%
+  group_modify(~ {
+    norm_factor <- 0.1 /  new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
+    counts <- get_area_counts(.x, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
+    )
+  })
 
-# Run the optimized version
-before_counts_fast <- calculate_before_counts_fast(
-  surface_before_particle_data,
-  new_sample_areas
-)
+# Calculate differences and averages
+surface_count_diff <- surface_after_counts %>%
+  full_join(surface_before_counts, 
+            by = c("Trial", "Sample", "Area"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Positive_Diff = pmax(Count_Diff, 0))
 
-
-after_counts_samp <- tryCatch({
-  surface_after_particle_data %>%
-    group_by(Sample, Trial, Cleaning_Method) %>%
-    group_modify(~ {
-      trial_area <- new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
-      counts <- get_reg_counts(.x, trial_area)
-      if (is.null(counts)) {
-        return(NULL)
-      }
-      data.frame(
-        Area = area_thresholds,
-        Count = counts
-      )
-    }) %>%
-    ungroup()
-}, error = function(e) {
-  message("Error in before_iest_counts calculation: ", e$message)
-  return(NULL)
-})
-
-# before_area_samp <- tryCatch({
-#   surface_before_particle_data %>%
-#     group_by(Sample, Trial, Cleaning_Method) %>%
-#     group_modify(~ {
-#           trial_area <- new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
-#       area <- get_reg_area(.x, trial_area)
-#       if (is.null(area)) {
-#         return(NULL)
-#       }
-#       data.frame(
-#         Diameter = diameter_thresholds,
-#         Area = area
-#       )
-#     }) %>%
-#     ungroup()
-# }, error = function(e) {
-#   message("Error in before_iest_counts calculation: ", e$message)
-#   return(NULL)
-# })
-# 
-# after_area_samp <- tryCatch({
-#   surface_after_particle_data %>%
-#     group_by(Sample, Trial, Cleaning_Method) %>%
-#     group_modify(~ {
-#       trial_area <- new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
-#       area <- get_reg_area(.x, trial_area)
-#       if (is.null(area)) {
-#         return(NULL)
-#       }
-#       data.frame(
-#         Diameter = diameter_thresholds,
-#         Area = area
-#       )
-#     }) %>%
-#     ungroup()
-# }, error = function(e) {
-#   message("Error in before_iest_counts calculation: ", e$message)
-#   return(NULL)
-# })
-
-# Combine before and after data
-combined_counts_samp <- before_counts_samp %>%
-  full_join(after_counts_samp, by = c("Trial", "Area", "Cleaning_Method", "Sample"), suffix = c("_Before", "_After")) %>%
-  arrange(Trial, Area)
-
-combined_counts_samp <- combined_counts_samp %>% 
-  mutate(Count_Diff = combined_counts_samp$Count_After - combined_counts_samp$Count_Before) %>%  mutate(
-    Positive_Diff = pmax(Count_Diff, 0)
+# Calculate average counts by trial
+average_surface_counts <- surface_count_diff %>%
+  group_by(Trial, Area) %>%
+  summarize(
+    Average_Count = mean(Positive_Diff, na.rm = TRUE),
+    .groups = "drop"
   )
-
-combined_counts_samp <- combined_counts_samp %>%
-  arrange(Trial, desc(Area))
-
-# Measuring Area instead of Count data
-
-combined_area_samp <- before_area_samp %>%
-  full_join(after_area_samp, by = c("Trial", "Diameter", "Cleaning_Method", "Sample"), suffix = c("_Before", "_After")) %>%
-  arrange(Trial, Diameter)
-
-combined_area_samp <- combined_area_samp %>% 
-  mutate(Area_Diff = combined_area_samp$Area_After - combined_area_samp$Area_Before) %>%  mutate(
-    Positive_Area = pmax(Area_Diff, 0)
-  )
-
-combined_area_samp <- combined_area_samp %>%
-  arrange(Trial, desc(Diameter))
-
-# Calculate cumulative counts and areas
-cumulative_counts_samp <- combined_counts_samp %>%
-  group_by(Trial) %>%
-  mutate(Cumulative_Count = cumsum(pmax(Count_Diff, 0))) %>%
-  ungroup()
-
-cumulative_area_samp <- combined_area_samp %>%
-  group_by(Trial) %>%
-  mutate(Cumulative_Area = cumsum(pmax(Area_Diff, 0))) %>%
-  ungroup()
-
-# Calculate average counts and areas
-average_counts <- cumulative_counts_samp %>%
-  group_by(Trial, Diameter, Cleaning_Method) %>%
-  summarize(Average_Cumulative_Count = round(mean(Cumulative_Count, na.rm = TRUE)), .groups = "drop") %>%
-  arrange(Trial, desc(Diameter))
-
-average_area <- cumulative_area_samp %>%
-  group_by(Trial, Diameter, Cleaning_Method) %>%
-  summarize(Average_Cumulative_Area = mean(Cumulative_Area, na.rm = TRUE), .groups = "drop") %>%
-  arrange(Trial, desc(Diameter))
-
-sum_area <- combined_area_samp %>%
-  group_by(Trial, Diameter, Cleaning_Method) %>%
-  summarize(Average_Area = mean(Positive_Area, na.rm = TRUE), .groups = "drop") %>%
-  arrange(Trial, desc(Diameter))
-
-# Fit best fit lines for counts
-best_fit_lines_avg <- average_counts %>%
-  filter(Average_Cumulative_Count > 0) %>%
-  filter(Diameter > 1) %>%
-    group_by(Trial) %>%
-    mutate(Diameter = log10(Diameter)^2) %>% 
-  mutate(Average_Cumulative_Count = log10(Average_Cumulative_Count)) %>% 
-  summarise(slope = coef(lm(Average_Cumulative_Count ~ Diameter))[2],
-    intercept = coef(lm(Average_Cumulative_Count ~ Diameter))[1]
-  )
-
-
-# Plot comparison of counts
-ggplot(average_counts[average_counts$Trial == c(6:10),], aes(x = log10(Diameter)^2, y = log10(Average_Cumulative_Count), group = Trial, color = factor(Trial))) +
-  geom_line() +
-  geom_abline(data = best_fit_lines_avg, 
-              aes(slope = slope, intercept = intercept, color = factor(Trial)),
-              linetype = "dotted") +
-  labs(x = "Diameter (log(microns)^2)", y = "Difference in Count of Particles (log scale)",
-       title = "Surfaces Difference: Distribution of Particles by Trial",
-       subtitle = "Solid lines represent observed differences, dashed lines represent fitted lines") +
-  theme_minimal() +
-  scale_color_manual(values = c("6" = "red", "7" = "pink", "8" = "blue", "9" = "red","10" = "green")) +
-  theme(legend.position = "bottom",
-        legend.title = element_text(size = 10),
-        legend.text = element_text(size = 8))
-
-# Display PCL and Slope statistics
-iest_fit <- best_fit_lines_avg %>%
-  mutate(PCL = 10^(sqrt(abs(intercept / slope))))
-
-kable(iest_fit, caption = "PCL and Slope Statistics for Samples")
-```
-
-## 2. Analysis Functions
-
-```{r analysis_functions}
-# Function to calculate area-based distribution
-calculate_area_distribution <- function(data, area_thresholds) {
-  # Get area-based counts
-  get_area_counts <- function(data, normalization_factors) {
-    tryCatch({
-      sapply(area_thresholds, function(x) {
-        sum(data$Area > x) * normalization_factors
-      })
-    }, error = function(e) {
-      message("Error in get_area_counts: ", e$message)
-      return(NULL)
-    })
-  }
-
-  # Calculate area-based sample counts
-  area_counts <- data %>%
-    group_by(Sample, Trial) %>%
-    group_modify(~ {
-      counts <- get_area_counts(.x, normalization_factors[.y$Trial])
-      if (is.null(counts)) {
-        return(NULL)
-      }
-      data.frame(
-        Area = area_thresholds,
-        Count = counts
-      )
-    }) %>%
-    ungroup()
-
-  # Calculate cumulative counts
-  cumulative_counts <- area_counts %>%
-    group_by(Trial) %>%
-    arrange(desc(Area)) %>%
-    mutate(Cumulative_Count = cumsum(Count)) %>%
-    ungroup()
-
-  # Calculate average cumulative counts
-  average_counts <- cumulative_counts %>%
-    group_by(Trial, Area) %>%
-    summarize(
-      Average_Cumulative_Count = mean(Cumulative_Count, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    arrange(Trial, desc(Area))
-
-  # Return results
-  list(
-    area_counts = area_counts,
-    cumulative_counts = cumulative_counts,
-    average_counts = average_counts
-  )
-}
-
-# Function to calculate best fit lines for area distribution
-calculate_best_fit <- function(average_counts) {
-  best_fit_lines <- average_counts %>%
-    group_by(Trial) %>%
-    filter(Average_Cumulative_Count > 0) %>%
-    mutate(
-      Log_Area = log10(Area),
-      Log_Count = log10(Average_Cumulative_Count)
-    ) %>%
-    summarise(
-      slope = coef(lm(Log_Count ~ Log_Area))[2],
-      intercept = coef(lm(Log_Count ~ Log_Area))[1]
-    ) %>%
-    mutate(L = 10^(sqrt(abs(intercept / slope))))
-  
-  return(best_fit_lines)
-}
-
-# Function to create area distribution plot
-plot_area_distribution <- function(average_counts, best_fit_lines, title) {
-  ggplot() +
-    geom_line(data = average_counts,
-              aes(x = log10(Area), y = log10(Average_Cumulative_Count),
-                  color = factor(Trial))) +
-    geom_abline(data = best_fit_lines,
-                aes(slope = slope, intercept = intercept,
-                    color = factor(Trial)),
-                linetype = "dotted") +
-    labs(x = "Area (log(microns²))",
-         y = "Normalized Count of Particles (log scale)",
-         title = title) +
-    theme_minimal() +
-    scale_color_manual(values = c("8" = "red", "9" = "blue", "10" = "green"),
-                      name = "Trial") +
-    theme(legend.position = "bottom")
-}
-```
-
-## 3. Results and Analysis
-
-```{r analysis}
-# Define area thresholds
-area_thresholds <- seq(1, max(edge_particles_data$Area), by = 10)
-
-# Calculate distributions
-edge_results <- calculate_area_distribution(edge_particles_data, area_thresholds)
-surface_results <- calculate_area_distribution(
-  bind_rows(
-    surface_before_data$particle_data,
-    surface_after_data$particle_data
-  ),
-  area_thresholds
-)
-
-calibration_results <- calculate_area_distribution(calibration_particles_data, area_thresholds)
 
 # Calculate best fit lines
-edge_best_fit <- calculate_best_fit(edge_results$average_counts)
-surface_best_fit <- calculate_best_fit(surface_results$average_counts)
-calibration_best_fit <- calculate_best_fit(calibration_results$average_counts)
-
-# Plot distributions
-plot_edge <- plot_area_distribution(
-  edge_results$average_counts,
-  edge_best_fit,
-  "Edge Particle Area Distribution"
-)
-print(plot_edge)
-
-plot_surface <- plot_area_distribution(
-  surface_results$average_counts,
-  surface_best_fit,
-  "Surface Particle Area Distribution"
-)
-print(plot_surface)
-
-plot_calibration <- plot_area_distribution(
-  calibration_results$average_counts,
-  calibration_best_fit,
-  "Calibration Wafer Area Distribution"
-)
-print(plot_calibration)
-```
-
-## 4. Combined Analysis
-
-```{r combined_analysis}
-# Combine all results for comparison
-combined_results <- bind_rows(
-  edge_results$average_counts %>% mutate(Type = "Edge"),
-  surface_results$average_counts %>% mutate(Type = "Surface"),
-  calibration_results$average_counts %>% mutate(Type = "Calibration")
-)
-
-# Create combined plot
-ggplot(combined_results, 
-       aes(x = log10(Area), 
-           y = log10(Average_Cumulative_Count),
-           color = factor(Trial),
-           linetype = Type)) +
-  geom_line() +
-  labs(x = "Area (log(microns²))",
-       y = "Normalized Count of Particles (log scale)",
-       title = "Combined Particle Area Distribution Analysis") +
-  theme_minimal() +
-  scale_color_manual(values = c("8" = "red", "9" = "blue", "10" = "green"),
-                    name = "Trial") +
-  theme(legend.position = "bottom")
-
-# Calculate comparison metrics
-comparison_metrics <- combined_results %>%
-  group_by(Area, Trial) %>%
-  summarize(
-    Edge_to_Surface = Average_Cumulative_Count[Type == "Edge"] / 
-                      Average_Cumulative_Count[Type == "Surface"],
-    Edge_to_Calibration = Average_Cumulative_Count[Type == "Edge"] / 
-                         Average_Cumulative_Count[Type == "Calibration"],
-    Surface_to_Calibration = Average_Cumulative_Count[Type == "Surface"] / 
-                            Average_Cumulative_Count[Type == "Calibration"],
-    .groups = "drop"
-  )
-
-# Plot comparison metrics
-ggplot(comparison_metrics) +
-  geom_line(aes(x = log10(Area), y = Edge_to_Surface, color = "Edge/Surface")) +
-  geom_line(aes(x = log10(Area), y = Edge_to_Calibration, color = "Edge/Calibration")) +
-  geom_line(aes(x = log10(Area), y = Surface_to_Calibration, color = "Surface/Calibration")) +
-  facet_wrap(~Trial) +
-  labs(x = "Area (log(microns²))",
-       y = "Ratio",
-       title = "Particle Distribution Ratios by Trial") +
-  theme_minimal() +
-  theme(legend.position = "bottom")
-```
-
-## 5. Statistical Analysis
-
-```{r statistical_analysis}
-# Calculate summary statistics for each trial and type
-summary_stats <- combined_results %>%
-  group_by(Trial, Type) %>%
-  summarize(
-    Mean_Area = mean(Area, na.rm = TRUE),
-    Median_Area = median(Area, na.rm = TRUE),
-    SD_Area = sd(Area, na.rm = TRUE),
-    Total_Particles = sum(Average_Cumulative_Count, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Display summary statistics
-kable(summary_stats,
-      caption = "Summary Statistics by Trial and Measurement Type",
-      digits = 2)
-
-# Perform Kruskal-Wallis test for each trial
-kruskal_results <- combined_results %>%
+surface_best_fits <- average_surface_counts %>%
   group_by(Trial) %>%
-  summarize(
-    kruskal_test = list(kruskal.test(Average_Cumulative_Count ~ Type)),
-    p_value = kruskal_test[[1]]$p.value,
+  filter(Average_Count > 0) %>%
+  mutate(
+    log_area = log10(Area),
+    log_count = log10(Average_Count)
+  ) %>%
+  summarise(
+    slope = coef(lm(log_count ~ log_area))[2],
+    intercept = coef(lm(log_count ~ log_area))[1],
     .groups = "drop"
   ) %>%
-  select(Trial, p_value)
+  mutate(PCL = 10^(-intercept/slope))
 
-kable(kruskal_results,
-      caption = "Kruskal-Wallis Test Results by Trial",
-      digits = 4)
+# Create visualization
+ggplot() +
+  geom_line(data = average_surface_counts,
+            aes(x = log10(Area), y = log10(Average_Count), 
+                color = factor(Trial))) +
+  geom_abline(data = surface_best_fits,
+              aes(slope = slope, intercept = intercept, 
+                  color = factor(Trial)),
+              linetype = "dotted") +
+  scale_color_manual(values = trial_colors, name = "Trial") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Surface Analysis: Particle Area Distribution",
+    subtitle = "Solid lines: observed data, Dotted lines: fitted curves"
+  ) +
+  custom_theme
+
+# Display PCL and slope statistics
+kable(surface_best_fits, 
+      caption = "PCL and Slope Statistics for Surface Analysis")
 ```
 
-## 6. Best Fit Analysis
+## 3. Edge Area Distribution Analysis
 
-```{r best_fit_analysis}
-# Combine all best fit results
-all_best_fits <- bind_rows(
-  edge_best_fit %>% mutate(Type = "Edge"),
-  surface_best_fit %>% mutate(Type = "Surface"),
-  calibration_best_fit %>% mutate(Type = "Calibration")
-)
+```{r edge_area_distribution_analysis}
+new_edge_factors<- edge_summary_data %>%
+  group_by(Sample, Trial) %>%
+  summarise(
+    Total_Width = sum(width),
+    .groups = "drop"
+  )
 
-# Display best fit parameters
-kable(all_best_fits,
-      caption = "Best Fit Parameters by Trial and Type",
-      digits = 4)
+max_width <- max(new_edge_factors$Total_Width)
 
-# Calculate R-squared values for fits
-calculate_r_squared <- function(data) {
-  data %>%
-    group_by(Trial, Type) %>%
-    filter(Average_Cumulative_Count > 0) %>%
-    summarize(
-      R_squared = summary(lm(log10(Average_Cumulative_Count) ~ log10(Area)))$r.squared,
-      .groups = "drop"
+new_edge_factors <- new_edge_factors %>% 
+  mutate(Factors = max_width/Total_Width)
+
+# Calculate area-based counts for edge data
+edge_counts <- edge_particles_data %>%
+  group_by(Trial, Sample) %>%
+  group_modify(~ {
+    norm_factor <- new_edge_factors$Factors[new_edge_factors$Sample == .y$Sample & new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
     )
-}
+  })
 
-r_squared_values <- bind_rows(
-  calculate_r_squared(edge_results$average_counts %>% mutate(Type = "Edge")),
-  calculate_r_squared(surface_results$average_counts %>% mutate(Type = "Surface")),
-  calculate_r_squared(calibration_results$average_counts %>% mutate(Type = "Calibration"))
-)
+# Calculate cumulative counts
+cumulative_edge_counts <- edge_counts %>%
+  group_by(Trial, Sample) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum(Count)) %>%
+  ungroup()
 
-kable(r_squared_values,
-      caption = "R-squared Values for Best Fit Lines",
-      digits = 4)
+# Calculate average counts by trial
+average_edge_counts <- cumulative_edge_counts %>%
+  group_by(Trial, Area) %>%
+  summarize(
+    Average_Count = mean(Cumulative_Count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Trial, desc(Area))
+
+# Calculate best fit lines
+edge_best_fits <- average_edge_counts %>%
+  group_by(Trial) %>%
+  filter(Average_Count > 0) %>%
+  mutate(
+    log_area = log10(Area),
+    log_count = log10(Average_Count)
+  ) %>%
+  summarise(
+    slope = coef(lm(log_count ~ log_area))[2],
+    intercept = coef(lm(log_count ~ log_area))[1],
+    .groups = "drop"
+  ) %>%
+  mutate(PCL = 10^(-intercept/slope))
+
+# Create edge distribution plot
+ggplot() +
+  geom_line(data = average_edge_counts,
+            aes(x = log10(Area), y = log10(Average_Count),
+                color = factor(Trial))) +
+  geom_abline(data = edge_best_fits,
+              aes(slope = slope, intercept = intercept,
+                  color = factor(Trial)),
+              linetype = "dotted") +
+  scale_color_manual(values = trial_colors, name = "Trial") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Analysis: Particle Area Distribution",
+    subtitle = "Solid lines: observed data, Dotted lines: fitted curves"
+  ) +
+  custom_theme
+
+# Display edge analysis statistics
+kable(edge_best_fits %>%
+        select(Trial, PCL, slope),
+      caption = "Edge Analysis Summary Statistics")
+```
+
+## 4. Calibration Wafer Analysis
+
+```{r calibration_wafer_analysis}
+new_calibration_factors<- calibration_summary_data %>%
+  group_by(Sample, Trial) %>%
+  summarise(
+    Total_Width = sum(edge_width),
+    .groups = "drop"
+  )
+
+max_width <- max(new_edge_factors$Total_Width)
+
+new_calibration_factors <- new_calibration_factors %>%
+  mutate(Factors = max_width/Total_Width)
+
+
+calibration_summary_data <- calibration_summary_data %>%
+  group_by(Sample, Trial) %>%
+  mutate(
+    Image = row_number(),
+    CumulativeCount = cumsum(Count)
+  ) %>%
+  ungroup()
+
+calibration_particles_data <- calibration_particles_data %>%
+  group_by(Sample, Trial) %>%
+  mutate(
+    ParticleIndex = row_number(),
+    Image = findInterval(ParticleIndex, calibration_summary_data$CumulativeCount[calibration_summary_data$Sample == first(Sample) & calibration_summary_data$Trial == first(Trial)]) + 1
+  ) %>%
+  ungroup()
+
+# Calculate area-based counts for calibration data
+calibration_counts <- calibration_particles_data %>%
+  group_by(Trial, Sample) %>%
+  group_modify(~ {
+    norm_factor <- new_calibration_factors$Factors[new_calibration_factors$Sample == .y$Sample & new_calibration_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
+    )
+  })
+
+# Calculate cumulative counts
+cumulative_calibration_counts <- calibration_counts %>%
+  group_by(Trial, Sample) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum(Count)) %>%
+  ungroup()
+
+# Calculate average counts by trial
+average_calibration_counts <- cumulative_calibration_counts %>%
+  group_by(Trial, Area) %>%
+  summarize(
+    Average_Count = mean(Cumulative_Count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(Trial = Trial + 5) %>%  # Adjust trial numbers to match other analyses
+  arrange(Trial, desc(Area))
+
+# Calculate best fit lines
+calibration_best_fits <- average_calibration_counts %>%
+  group_by(Trial) %>%
+  filter(Average_Count > 0) %>%
+  mutate(
+    log_area = log10(Area),
+    log_count = log10(Average_Count)
+  ) %>%
+  summarise(
+    slope = coef(lm(log_count ~ log_area))[2],
+    intercept = coef(lm(log_count ~ log_area))[1],
+    .groups = "drop"
+  ) %>%
+  mutate(PCL = 10^(-intercept/slope))
+
+# Create calibration visualization
+ggplot() +
+  geom_line(data = average_calibration_counts,
+            aes(x = log10(Area), y = log10(Average_Count),
+                color = factor(Trial))) +
+  geom_abline(data = calibration_best_fits,
+              aes(slope = slope, intercept = intercept,
+                  color = factor(Trial)),
+              linetype = "dotted") +
+  scale_color_manual(values = trial_colors, name = "Trial") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Calibration Wafer Analysis: Particle Area Distribution",
+    subtitle = "Solid lines: observed data, Dotted lines: fitted curves"
+  ) +
+  custom_theme
+
+# Display calibration analysis statistics
+kable(calibration_best_fits,
+      caption = "Calibration Wafer Analysis Summary Statistics")
+```
+
+## 5. Edge Model Analysis
+
+```{r edge_model_analysis}
+
+
+# Calculate model parameters using area-based approach
+edge_model_data <- surface_count_diff %>%
+  left_join(surface_before_data$trial_areas, by = "Trial") %>%
+  mutate(
+    Normalized_Area = (Positive_Diff * Area) / (.1 * 10^12),
+    Model_Count = (4 * Normalized_Area) / sqrt(pi * (2*(sqrt(Area/pi))))
+  ) %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum(Model_Count)) %>%
+  ungroup()
+
+# Normalize counts by maximum edge length
+edge_model_data <- edge_model_data %>%
+  mutate(
+    Normalized_Count = Model_Count * max_width,
+    Normalized_Cumulative_Count = Cumulative_Count * max_width
+  )
+
+# Calculate best fit lines for the model
+model_best_fits <- edge_model_data %>%
+  group_by(Trial) %>%
+  filter(Normalized_Cumulative_Count > 0) %>%
+  mutate(
+    log_area = log10(Area),
+    log_count = log10(Normalized_Cumulative_Count)
+  ) %>%
+  summarise(
+    slope = coef(lm(log_count ~ log_area))[2],
+    intercept = coef(lm(log_count ~ log_area))[1],
+    .groups = "drop"
+  ) %>%
+  mutate(PCL = 10^(-intercept/slope))
+
+# Create edge model visualization
+ggplot() +
+  geom_line(data = edge_model_data,
+            aes(x = log10(Area), y = log10(Normalized_Cumulative_Count),
+                color = factor(Trial))) +
+  geom_abline(data = model_best_fits,
+              aes(slope = slope, intercept = intercept,
+                  color = factor(Trial)),
+              linetype = "dotted") +
+  scale_color_manual(values = trial_colors, name = "Trial") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Model Analysis: Particle Area Distribution",
+    subtitle = "Solid lines: modeled data, Dotted lines: fitted curves"
+  ) +
+  custom_theme
+
+# Display model statistics
+kable(model_best_fits %>%
+        select(Trial, PCL, slope),
+      caption = "Edge Model Analysis Summary Statistics")
+```
+
+## 6. Combined Analysis and Comparison
+
+```{r combined_analysis, fig.width=10, fig.height=6}
+
+# Create a combined plot with observed data, edge model, and calibration data
+ggplot() +
+  # Observed data
+  geom_line(data = average_edge_counts, 
+            aes(x = log10(Area), y = log10(Average_Count), 
+                color = factor(Trial)), 
+            linetype = line_types["Observed"]) +
+  # Edge model
+  geom_line(data = edge_model_data,
+            aes(x = log10(Area), y = log10(Normalized_Cumulative_Count), 
+                color = factor(Trial)),
+            linetype = line_types["Modeled"]) +
+  # Calibration data
+  geom_line(data = average_calibration_counts,
+            aes(x = log10(Area), y = log10(Average_Count), 
+                color = factor(Trial)),
+            linetype = line_types["Calibration"]) +
+  scale_color_manual(values = trial_colors, name = "Trial") +
+  labs(
+    x = expression(log[10](Area)~"(microns)"),
+    y = "log10(Particle Count)",
+    title = "Distribution of Particles by Trial",
+    subtitle = "Solid: Observed, Dashed: Edge Model, Dotted: Calibration"
+  ) +
+  custom_theme
+
+## Comparative Means
+comparison_mean_dist <- average_edge_counts %>% 
+  full_join(edge_model_data[,c(1,3,15)], by = c("Trial", "Area")) %>% 
+  full_join(average_calibration_counts, by = c("Trial", "Area")) %>% 
+  mutate(
+    Observed_edge_counts = Average_Count.x,
+    Modeled_edge_counts = Normalized_Cumulative_Count,
+    Observed_Calibration_counts = Average_Count.y
+  ) %>% 
+  select(Trial, Area, Observed_edge_counts, Modeled_edge_counts, Observed_Calibration_counts) %>%
+  group_by(Area) %>%
+  summarize(
+    Observed_edge_counts = round(mean(Observed_edge_counts, na.rm = TRUE)),
+    Modeled_edge_counts = round(mean(Modeled_edge_counts, na.rm = TRUE)),
+    Observed_Calibration_counts = round(mean(Observed_Calibration_counts, na.rm = TRUE)), 
+    .groups = "drop"
+  ) %>% 
+  mutate(
+    Modeled_edge_with_adhesion_counts = round(Modeled_edge_counts/(2*(sqrt(Area/pi)))),
+    Calibration_with_adhesion_counts = round(Observed_Calibration_counts/(2*(sqrt(Area/pi))))
+  )
+
+# Mean distribution plot
+ggplot() +
+  geom_line(data = comparison_mean_dist, 
+            aes(x = log10(Area), y = log10(Observed_edge_counts)),
+            color = trial_colors["6"]) +
+  geom_line(data = comparison_mean_dist, 
+            aes(x = log10(Area), y = log10(Modeled_edge_counts)),
+            color = trial_colors["8"]) +
+  geom_line(data = comparison_mean_dist, 
+            aes(x = log10(Area), y = log10(Observed_Calibration_counts)),
+            color = trial_colors["9"]) +
+  geom_line(data = comparison_mean_dist, 
+            aes(x = log10(Area), y = log10(Modeled_edge_with_adhesion_counts)),
+            color = trial_colors["8"], 
+            linetype = "dashed") +
+  geom_line(data = comparison_mean_dist, 
+            aes(x = log10(Area), y = log10(Calibration_with_adhesion_counts)),
+            color = trial_colors["9"], 
+            linetype = "dashed") +
+  labs(
+    x = expression(log[10](Area)~"(microns)"),
+    y = "log10(Particle Count)",
+    title = "Distribution of Particles by Model",
+    subtitle = "Red: Observed Edge Counts, Blue: Modeled Edge Counts, Green: Observed Calibration Counts, \n Blue-dashed: Modeled Edge Counts with Adhesion Factor, Green-dashed: Observed Calibration Counts with Adhesion Factor"
+  ) +
+  custom_theme
+
+## Comparison Ratios
+comparison_all_models <- average_edge_counts %>% 
+  full_join(edge_model_data[,c(1,3,15)], by = c("Trial", "Area")) %>% 
+  full_join(average_calibration_counts, by = c("Trial", "Area")) %>% 
+  mutate(
+    Observed_edge_counts = Average_Count.x,
+    Modeled_edge_counts = Normalized_Cumulative_Count,
+    Observed_Calibration_counts = Average_Count.y
+  ) %>% 
+  select(Trial, Area, Observed_edge_counts, Modeled_edge_counts, Observed_Calibration_counts) %>% 
+  mutate(
+    Ratio = 1/(2*(sqrt(Area/pi))),
+    Observed_by_Modeled = Observed_edge_counts/Modeled_edge_counts,
+    Observed_by_Calibration = Observed_edge_counts/Observed_Calibration_counts,
+    Modeled_by_Calibration = Modeled_edge_counts/Observed_Calibration_counts
+  ) %>% 
+  group_by(Area) %>%
+  summarize(
+    Observed_by_Modeled = mean(Observed_by_Modeled, na.rm = TRUE),
+    Observed_by_Calibration = mean(Observed_by_Calibration, na.rm = TRUE),
+    Modeled_by_Calibration = mean(Modeled_by_Calibration, na.rm = TRUE), 
+    Ratio = mean(Ratio, na.rm = TRUE), 
+    .groups = "drop"
+  ) 
+
+# Ratio comparison plot
+ggplot() +
+  geom_line(data = comparison_all_models, 
+            aes(x = log10(Area), y = Observed_by_Modeled),
+            color = trial_colors["6"]) +
+  geom_line(data = comparison_all_models, 
+            aes(x = log10(Area), y = Observed_by_Calibration),
+            color = trial_colors["8"]) +
+  geom_line(data = comparison_all_models, 
+            aes(x = log10(Area), y = Ratio),
+            color = trial_colors["9"]) +
+  labs(
+    x = expression(log[10](Area)~"(microns)"),
+    y = "Ratio",
+    title = "Ratio of Particles per Experiment",
+    subtitle = "Comparison of measurement methods against theoretical ratio"
+  ) +
+  custom_theme
+
+# Model comparison table
+model_comparison_table <- comparison_all_models %>% summary()
+
+kable(model_comparison_table, 
+      caption = "Statistical Summary of Model Comparisons")
+
 ```
