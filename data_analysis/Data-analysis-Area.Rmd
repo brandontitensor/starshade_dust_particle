@@ -2,7 +2,7 @@
 title: "Area_based_analysis"
 author: "Brandon Titensor"
 date: "2025-01-08"
-output: html_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
@@ -19,6 +19,7 @@ library(ggplot2)
 library(dplyr)
 library(grid)
 library(fs)
+library(png)
 
 # Create unified theme
 custom_theme <- theme_minimal() +
@@ -333,16 +334,18 @@ average_surface_counts <- surface_count_diff %>%
   summarize(
     Average_Count = mean(Positive_Diff, na.rm = TRUE),
     .groups = "drop"
-  )
+  ) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count))
 
 # Calculate best fit lines
 surface_best_fits <- average_surface_counts %>%
   group_by(Trial) %>%
   filter(Average_Count > 0) %>%
-  mutate(
-    log_area = log10(Area),
-    log_count = log10(Average_Count)
-  ) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>%
   summarise(
     slope = coef(lm(log_count ~ log_area))[2],
     intercept = coef(lm(log_count ~ log_area))[1],
@@ -350,11 +353,22 @@ surface_best_fits <- average_surface_counts %>%
   ) %>%
   mutate(PCL = 10^(-intercept/slope))
 
-# Create visualization
+# For cumulative data - calculate the overall average across all trials
+overall_average_surface <- average_surface_counts %>%
+  group_by(log_area) %>%
+  summarize(
+    Average_Count = mean(log_count, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Modify the cumulative distribution plot
 ggplot() +
   geom_line(data = average_surface_counts,
-            aes(x = log10(Area), y = log10(Average_Count), 
+            aes(x = log_area, y = log_count, 
                 color = factor(Trial))) +
+  geom_line(data = overall_average_surface,
+            aes(x = log_area, y = Average_Count),
+            color = "black", size = 1.2) +  # Add distinct average line
   geom_abline(data = surface_best_fits,
               aes(slope = slope, intercept = intercept, 
                   color = factor(Trial)),
@@ -364,7 +378,7 @@ ggplot() +
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
     title = "Surface Analysis: Particle Area Distribution",
-    subtitle = "Solid lines: observed data, Dotted lines: fitted curves"
+    subtitle = "Solid lines: observed data, Dotted lines: fitted curves, Black line: overall average"
   ) +
   custom_theme
 
@@ -372,77 +386,49 @@ ggplot() +
 kable(surface_best_fits, 
       caption = "PCL and Slope Statistics for Surface Analysis")
 
-# Function to get binned counts
-get_binned_counts <- function(data, normalization_factor) {
-  # Create bins using the area thresholds
-  bins <- cut(data$Area, 
-              breaks = c(0, area_thresholds), 
-              labels = area_thresholds,
-              include.lowest = TRUE)
-  
-  # Count particles in each bin and normalize
-  counts <- table(bins) * normalization_factor
-  return(counts)
-}
+average_surface_binned <- average_surface_counts %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Average_Count[1], diff(Average_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
 
-# Calculate binned counts for before and after data
-surface_before_binned <- surface_before_data$particle_data %>%
-  group_by(Trial, Sample) %>%
-  group_modify(~ {
-    norm_factor <- 0.1 / new_sample_areas$Total_Area[
-      new_sample_areas$Sample == .y$Sample & 
-      new_sample_areas$Trial == .y$Trial
-    ]
-    counts <- get_binned_counts(.x, norm_factor)
-    tibble(
-      Area = as.numeric(names(counts)),
-      Count = as.numeric(counts)
-    )
-  })
-
-surface_after_binned <- surface_after_data$particle_data %>%
-  group_by(Trial, Sample) %>%
-  group_modify(~ {
-    norm_factor <- 0.1 / new_sample_areas$Total_Area[
-      new_sample_areas$Sample == .y$Sample & 
-      new_sample_areas$Trial == .y$Trial
-    ]
-    counts <- get_binned_counts(.x, norm_factor)
-    tibble(
-      Area = as.numeric(names(counts)),
-      Count = as.numeric(counts)
-    )
-  })
-
-# Calculate differences for binned data
-surface_binned_diff <- surface_after_binned %>%
-  full_join(surface_before_binned, 
-            by = c("Trial", "Sample", "Area"), 
-            suffix = c("_After", "_Before")) %>%
-  mutate(Count_Diff = Count_After - Count_Before,
-         Positive_Diff = pmax(Count_Diff, 0))
-
-# Calculate average binned counts by trial
-average_surface_binned <- surface_binned_diff %>%
-  group_by(Trial, Area) %>%
+# Calculate overall average binned counts
+overall_average_surface_binned <- average_surface_binned %>%
+  group_by(Area) %>%
   summarize(
-    Average_Count = mean(Positive_Diff, na.rm = TRUE),
+    Average_Count = mean(Count, na.rm = TRUE),
     .groups = "drop"
+  ) %>%
+  mutate(
+    log_area = log10(Area),
+    log_count = log10(Average_Count),
+    log_count = ifelse(log_count < 0 | !is.finite(log_count), 0, log_count)
   )
 
-# Create visualization for binned data
-ggplot(average_surface_binned, 
-       aes(x = log10(Area), y = log10(Average_Count), color = factor(Trial))) +
-  geom_line() +
+# Modify the binned distribution plot
+ggplot() +
+  geom_line(data = average_surface_binned, 
+            aes(x = log_area, y = log_count_bin, 
+                color = factor(Trial))) +
+  geom_line(data = overall_average_surface_binned,
+            aes(x = log_area, y = log_count),
+            color = "black", size = 1.2) +  # Add distinct average line
   scale_color_manual(values = trial_colors, name = "Trial") +
   labs(
     x = expression(Area~"(square microns)"),
     y = "Average Particle Count",
     title = "Surface Analysis: Binned Particle Size Distribution",
-    subtitle = "Particles binned by area thresholds"
+    subtitle = "Particles binned by area thresholds\nBlack line: overall average"
   ) +
-  custom_theme
-
+  custom_theme +
+  theme(
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
 ```
 
 ## 3. Edge Area Distribution Analysis
@@ -483,18 +469,21 @@ cumulative_edge_counts <- edge_counts %>%
 average_edge_counts <- cumulative_edge_counts %>%
   group_by(Trial, Area) %>%
   summarize(
-    Average_Count = mean(Cumulative_Count, na.rm = TRUE),
+    Average_Count = round(mean(Cumulative_Count, na.rm = TRUE)),
     .groups = "drop"
   ) %>%
-  arrange(Trial, desc(Area))
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>% 
+  arrange(Trial, desc(Area)) 
 
 # Calculate best fit lines
 edge_best_fits <- average_edge_counts %>%
   group_by(Trial) %>%
-  filter(Average_Count > 0) %>%
   mutate(
     log_area = log10(Area),
-    log_count = log10(Average_Count)
+    log_count = log10(Average_Count),
+    log_count = ifelse(log_count < 0, 0, log_count)
   ) %>%
   summarise(
     slope = coef(lm(log_count ~ log_area))[2],
@@ -503,11 +492,22 @@ edge_best_fits <- average_edge_counts %>%
   ) %>%
   mutate(PCL = 10^(-intercept/slope))
 
-# Create edge distribution plot
+# For cumulative data - calculate the overall average across all trials
+overall_average_cumulative <- average_edge_counts %>%
+  group_by(log_area) %>%
+  summarize(
+    Average_Count = mean(log_count, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Modify the cumulative distribution plot
 ggplot() +
   geom_line(data = average_edge_counts,
-            aes(x = log10(Area), y = log10(Average_Count),
+            aes(x = log_area, y = log_count,
                 color = factor(Trial))) +
+  geom_line(data = overall_average_cumulative,
+            aes(x = log_area, y = Average_Count),
+            color = "black", size = 1.2) +  # Make the average line distinct
   geom_abline(data = edge_best_fits,
               aes(slope = slope, intercept = intercept,
                   color = factor(Trial)),
@@ -517,7 +517,7 @@ ggplot() +
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
     title = "Edge Analysis: Particle Area Distribution",
-    subtitle = "Solid lines: observed data, Dotted lines: fitted curves"
+    subtitle = "Solid lines: observed data, Dotted lines: fitted curves, Black line: overall average"
   ) +
   custom_theme
 
@@ -526,52 +526,44 @@ kable(edge_best_fits %>%
         select(Trial, PCL, slope),
       caption = "Edge Analysis Summary Statistics")
 
-# Function to get binned counts for edge data
-get_binned_counts <- function(data, normalization_factor) {
-  # Create bins using the area thresholds
-  bins <- cut(data$Area, 
-              breaks = c(0, area_thresholds), 
-              labels = area_thresholds,
-              include.lowest = TRUE)
-  
-  # Count particles in each bin and normalize
-  counts <- table(bins) * normalization_factor
-  return(counts)
-}
+# Calculate binned counts from cumulative data
+edge_binned <- average_edge_counts %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Average_Count[1], diff(Average_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
 
-# Calculate binned counts for edge data
-edge_binned <- edge_particles_data %>%
-  group_by(Trial, Sample) %>%
-  group_modify(~ {
-    norm_factor <- new_edge_factors$Factors[
-      new_edge_factors$Sample == .y$Sample & 
-      new_edge_factors$Trial == .y$Trial
-    ]
-    counts <- get_binned_counts(.x, norm_factor)
-    tibble(
-      Area = as.numeric(names(counts)),
-      Count = as.numeric(counts)
-    )
-  })
-
-# Calculate average binned counts by trial
-average_edge_binned <- edge_binned %>%
-  group_by(Trial, Area) %>%
+# Calculate overall average binned counts
+overall_average_binned <- edge_binned %>%
+  group_by(Area) %>%
   summarize(
     Average_Count = mean(Count, na.rm = TRUE),
     .groups = "drop"
+  ) %>%
+  mutate(
+    log_area = log10(Area),
+    log_count = log10(Average_Count),
+    log_count = ifelse(log_count < 0 | !is.finite(log_count), 0, log_count)
   )
 
-# Create visualization for binned edge data
-ggplot(average_edge_binned, 
-       aes(x = log10(Area), y = log10(Average_Count), color = factor(Trial))) +
-  geom_line() +
+# Modify the binned distribution plot
+ggplot() +
+  geom_line(data = edge_binned, 
+            aes(x = log_area, y = log_count_bin, 
+                color = factor(Trial))) +
+  geom_line(data = overall_average_binned,
+            aes(x = log_area, y = log_count),
+            color = "black", size = 1.2) +  # Make the average line distinct
   scale_color_manual(values = trial_colors, name = "Trial") +
   labs(
-    x = expression(Area~"(square microns)"),
-    y = "Average Particle Count",
+    x = expression(log10Area~"(square microns)"),
+    y = "log10(Average Particle Count)",
     title = "Edge Analysis: Binned Particle Size Distribution",
-    subtitle = "Particles binned by logarithmic area thresholds"
+    subtitle = "Particles binned by logarithmic area thresholds\nBlack line: overall average"
   ) +
   custom_theme +
   theme(
@@ -637,20 +629,21 @@ cumulative_calibration_counts <- calibration_counts %>%
 average_calibration_counts <- cumulative_calibration_counts %>%
   group_by(Trial, Area) %>%
   summarize(
-    Average_Count = mean(Cumulative_Count, na.rm = TRUE),
+    Average_Count = round(mean(Cumulative_Count, na.rm = TRUE)),
     .groups = "drop"
   ) %>%
   mutate(Trial = Trial + 5) %>%  # Adjust trial numbers to match other analyses
-  arrange(Trial, desc(Area))
+  arrange(Trial, desc(Area)) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count))
 
 # Calculate best fit lines
 calibration_best_fits <- average_calibration_counts %>%
   group_by(Trial) %>%
-  filter(Average_Count > 0) %>%
-  mutate(
-    log_area = log10(Area),
-    log_count = log10(Average_Count)
-  ) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>%
   summarise(
     slope = coef(lm(log_count ~ log_area))[2],
     intercept = coef(lm(log_count ~ log_area))[1],
@@ -658,11 +651,22 @@ calibration_best_fits <- average_calibration_counts %>%
   ) %>%
   mutate(PCL = 10^(-intercept/slope))
 
-# Create calibration visualization
+# For cumulative data - calculate the overall average across all trials
+overall_average_calibration <- average_calibration_counts %>%
+  group_by(log_area) %>%
+  summarize(
+    Average_Count = mean(log_count, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Modify the cumulative distribution plot
 ggplot() +
   geom_line(data = average_calibration_counts,
-            aes(x = log10(Area), y = log10(Average_Count),
+            aes(x = log_area, y = log_count,
                 color = factor(Trial))) +
+  geom_line(data = overall_average_calibration,
+            aes(x = log_area, y = Average_Count),
+            color = "black", size = 1.2) +  # Add distinct average line
   geom_abline(data = calibration_best_fits,
               aes(slope = slope, intercept = intercept,
                   color = factor(Trial)),
@@ -672,7 +676,7 @@ ggplot() +
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
     title = "Calibration Wafer Analysis: Particle Area Distribution",
-    subtitle = "Solid lines: observed data, Dotted lines: fitted curves"
+    subtitle = "Solid lines: observed data, Dotted lines: fitted curves, Black line: overall average"
   ) +
   custom_theme
 
@@ -680,60 +684,52 @@ ggplot() +
 kable(calibration_best_fits,
       caption = "Calibration Wafer Analysis Summary Statistics")
 
-# Function to get binned counts for calibration data
-get_binned_counts <- function(data, normalization_factor) {
-  # Create bins using the area thresholds
-  bins <- cut(data$Area, 
-              breaks = c(0, area_thresholds), 
-              labels = area_thresholds,
-              include.lowest = TRUE)
-  
-  # Count particles in each bin and normalize
-  counts <- table(bins) * normalization_factor
-  return(counts)
-}
 
-# Calculate binned counts for calibration data
-calibration_binned <- calibration_particles_data %>%
-  group_by(Trial, Sample) %>%
-  group_modify(~ {
-    norm_factor <- new_calibration_factors$Factors[
-      new_calibration_factors$Sample == .y$Sample & 
-      new_calibration_factors$Trial == .y$Trial
-    ]
-    counts <- get_binned_counts(.x, norm_factor)
-    tibble(
-      Area = as.numeric(names(counts)),
-      Count = as.numeric(counts)
-    )
-  })
+average_calibration_binned <- average_calibration_counts %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Average_Count[1], diff(Average_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
 
-# Calculate average binned counts by trial
-average_calibration_binned <- calibration_binned %>%
-  group_by(Trial, Area) %>%
+# Calculate overall average binned counts
+overall_average_calibration_binned <- average_calibration_binned %>%
+  group_by(Area) %>%
   summarize(
     Average_Count = mean(Count, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  mutate(Trial = Trial + 5)  # Adjust trial numbers to match other analyses
+  mutate(
+    log_area = log10(Area),
+    log_count = log10(Average_Count),
+    log_count = ifelse(log_count < 0 | !is.finite(log_count), 0, log_count)
+  )
 
-# Create visualization for binned calibration data
-ggplot(average_calibration_binned, 
-       aes(x = log10(Area), y = log10(Average_Count), color = factor(Trial))) +
-  geom_line() +
+
+
+# Modify the binned distribution plot
+ggplot() +
+  geom_line(data = average_calibration_binned, 
+            aes(x = log_area, y = log_count_bin, 
+                color = factor(Trial))) +
+  geom_line(data = overall_average_calibration_binned,
+            aes(x = log_area, y = log_count),
+            color = "black", size = 1.2) +  # Add distinct average line
   scale_color_manual(values = trial_colors, name = "Trial") +
   labs(
     x = expression(Area~"(square microns)"),
     y = "Average Particle Count",
     title = "Calibration Wafer Analysis: Binned Particle Size Distribution",
-    subtitle = "Particles binned by logarithmic area thresholds"
+    subtitle = "Particles binned by logarithmic area thresholds\nBlack line: overall average"
   ) +
   custom_theme +
   theme(
     panel.grid.minor = element_blank(),
     legend.position = "bottom"
   )
-
 
 ```
 
@@ -792,17 +788,18 @@ edge_model_data <- surface_area %>%
 edge_model_data <- edge_model_data %>%
   mutate(
     Normalized_Count = Model_Count * max_width,
-    Normalized_Cumulative_Count = Cumulative_Count * max_width
-  )
+    Normalized_Cumulative_Count = round(Cumulative_Count * max_width)
+  ) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Normalized_Cumulative_Count),
+         Normalized_Cumulative_Count = ifelse(log_count < 0, 0, log_count))
 
 # Calculate best fit lines for the model
 model_best_fits <- edge_model_data %>%
   group_by(Trial) %>%
-  filter(Normalized_Cumulative_Count > 0) %>%
-  mutate(
-    log_area = log10(Area),
-    log_count = log10(Normalized_Cumulative_Count)
-  ) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Normalized_Cumulative_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>%
   summarise(
     slope = coef(lm(log_count ~ log_area))[2],
     intercept = coef(lm(log_count ~ log_area))[1],
@@ -810,11 +807,21 @@ model_best_fits <- edge_model_data %>%
   ) %>%
   mutate(PCL = 10^(-intercept/slope))
 
+overall_average_model <- edge_model_data %>%
+  group_by(log_area) %>%
+  summarize(
+    Average_Count = mean(Normalized_Cumulative_Count, na.rm = TRUE),
+    .groups = "drop"
+  )
+
 # Create edge model visualization
 ggplot() +
   geom_line(data = edge_model_data,
-            aes(x = log10(Area), y = log10(Normalized_Cumulative_Count),
+            aes(x = log_area, y = Normalized_Cumulative_Count,
                 color = factor(Trial))) +
+  geom_line(data = overall_average_model,
+            aes(x = log_area, y = Average_Count),
+            color = "black", size = 1.2) +  
   geom_abline(data = model_best_fits,
               aes(slope = slope, intercept = intercept,
                   color = factor(Trial)),
@@ -824,9 +831,10 @@ ggplot() +
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
     title = "Edge Model Analysis: Particle Area Distribution",
-    subtitle = "Solid lines: modeled data, Dotted lines: fitted curves"
+    subtitle = "Solid lines: modeled data, Dotted lines: fitted curves, Black line: overall average"
   ) +
   custom_theme
+
 
 # Display model statistics
 kable(model_best_fits %>%
@@ -877,22 +885,39 @@ edge_model_binned <- surface_model_binned %>%
 average_model_binned <- edge_model_binned %>%
   group_by(Trial, Area) %>%
   summarize(
-    Average_Count = mean(Normalized_Count, na.rm = TRUE),
+    Average_Count = round(mean(Normalized_Count, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count))
+
+overall_average_model_binned <- average_model_binned %>%
+  group_by(log_area) %>%
+  summarize(
+    Average_Count = mean(log_count, na.rm = TRUE),
     .groups = "drop"
   )
 
-# Create visualization for binned data
-ggplot(average_model_binned, 
-       aes(x = log10(Area), y = log10(Average_Count), color = factor(Trial))) +
-  geom_line() +
+ggplot() +
+  geom_line(data = average_model_binned, 
+            aes(x = log_area, y = log_count, 
+                color = factor(Trial))) +
+  geom_line(data = overall_average_model_binned,
+            aes(x = log_area, y = Average_Count),
+            color = "black", size = 1.2) +
   scale_color_manual(values = trial_colors, name = "Trial") +
   labs(
     x = expression(Area~"(square microns)"),
     y = "Average Model Particle Count",
     title = "Edge Model Analysis: Binned Particle Size Distribution",
-    subtitle = "Particles binned by area thresholds"
+    subtitle = "Particles binned by area thresholds\nBlack line: overall average"
   ) +
-  custom_theme
+  custom_theme +
+  theme(
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
 
 ```
 
@@ -904,17 +929,17 @@ ggplot(average_model_binned,
 ggplot() +
   # Observed data
   geom_line(data = average_edge_counts, 
-            aes(x = log10(Area), y = log10(Average_Count), 
+            aes(x = log_area, y = log_count, 
                 color = factor(Trial)), 
             linetype = line_types["Observed"]) +
   # Edge model
   geom_line(data = edge_model_data,
-            aes(x = log10(Area), y = log10(Normalized_Cumulative_Count), 
+            aes(x = log_area, y = Normalized_Cumulative_Count, 
                 color = factor(Trial)),
             linetype = line_types["Modeled"]) +
   # Calibration data
   geom_line(data = average_calibration_counts,
-            aes(x = log10(Area), y = log10(Average_Count), 
+            aes(x = log_area, y = log_count, 
                 color = factor(Trial)),
             linetype = line_types["Calibration"]) +
   scale_color_manual(values = trial_colors, name = "Trial") +
@@ -931,33 +956,33 @@ comparison_mean_dist <- average_edge_counts %>%
   full_join(edge_model_data[,c(1,2,8)], by = c("Trial", "Area")) %>% 
   full_join(average_calibration_counts, by = c("Trial", "Area")) %>% 
   mutate(
-    Observed_edge_counts = Average_Count.x,
+    Observed_edge_counts = log_count.x,
     Modeled_edge_counts = Normalized_Cumulative_Count,
-    Observed_Calibration_counts = Average_Count.y
+    Observed_Calibration_counts = log_count.y
   ) %>% 
-  select(Trial, Area, Observed_edge_counts, Modeled_edge_counts, Observed_Calibration_counts) %>%
-  group_by(Area) %>%
+  select(Trial, log_area.x, Observed_edge_counts, Modeled_edge_counts, Observed_Calibration_counts) %>%
+  group_by(log_area.x) %>%
   summarize(
-    Observed_edge_counts = round(mean(Observed_edge_counts, na.rm = TRUE)),
-    Modeled_edge_counts = round(mean(Modeled_edge_counts, na.rm = TRUE)),
-    Observed_Calibration_counts = round(mean(Observed_Calibration_counts, na.rm = TRUE)), 
-    .groups = "drop"
-  ) %>% 
-  mutate(
-    Modeled_edge_with_adhesion_counts = round(Modeled_edge_counts/(2*(sqrt(Area/pi)))),
-    Calibration_with_adhesion_counts = round(Observed_Calibration_counts/(2*(sqrt(Area/pi))))
-  )
+    Observed_edge_counts = mean(Observed_edge_counts, na.rm = F),
+    Modeled_edge_counts = mean(Modeled_edge_counts, na.rm = F),
+    Observed_Calibration_counts = mean(Observed_Calibration_counts, na.rm = F), 
+    .groups = "drop")
+  #  %>% 
+  # mutate(
+  #   Modeled_edge_with_adhesion_counts = round(Modeled_edge_counts/(2*(sqrt(Area/pi)))),
+  #   Calibration_with_adhesion_counts = round(Observed_Calibration_counts/(2*(sqrt(Area/pi))))
+  # )
 
 # Mean distribution plot
 ggplot() +
   geom_line(data = comparison_mean_dist, 
-            aes(x = log10(Area), y = log10(Observed_edge_counts)),
+            aes(x = log_area.x, y = Observed_edge_counts),
             color = trial_colors["6"]) +
   geom_line(data = comparison_mean_dist, 
-            aes(x = log10(Area), y = log10(Modeled_edge_counts)),
+            aes(x = log_area.x, y = Modeled_edge_counts),
             color = trial_colors["8"]) +
   geom_line(data = comparison_mean_dist, 
-            aes(x = log10(Area), y = log10(Observed_Calibration_counts)),
+            aes(x = log_area.x, y = Observed_Calibration_counts),
             color = trial_colors["9"]) +
   # geom_line(data = comparison_mean_dist, 
   #           aes(x = log10(Area), y = log10(Modeled_edge_with_adhesion_counts)),
@@ -980,18 +1005,18 @@ comparison_all_models <- average_edge_counts %>%
   full_join(edge_model_data[,c(1,2,8)], by = c("Trial", "Area")) %>% 
   full_join(average_calibration_counts, by = c("Trial", "Area")) %>% 
   mutate(
-    Observed_edge_counts = Average_Count.x,
+    Observed_edge_counts = log_count.x,
     Modeled_edge_counts = Normalized_Cumulative_Count,
-    Observed_Calibration_counts = Average_Count.y
+    Observed_Calibration_counts = log_count.y
   ) %>% 
-  select(Trial, Area, Observed_edge_counts, Modeled_edge_counts, Observed_Calibration_counts) %>% 
+  select(Trial, log_area.x, Observed_edge_counts, Modeled_edge_counts, Observed_Calibration_counts) %>% 
   mutate(
-    Ratio = 1/(2*(sqrt(Area/pi))),
+    Ratio = 1/(2*(sqrt(10^(log_area.x)/pi))),
     Observed_by_Modeled = Observed_edge_counts/Modeled_edge_counts,
     Observed_by_Calibration = Observed_edge_counts/Observed_Calibration_counts,
     Modeled_by_Calibration = Modeled_edge_counts/Observed_Calibration_counts
   ) %>% 
-  group_by(Area) %>%
+  group_by(log_area.x) %>%
   summarize(
     Observed_by_Modeled = mean(Observed_by_Modeled, na.rm = TRUE),
     Observed_by_Calibration = mean(Observed_by_Calibration, na.rm = TRUE),
@@ -1003,13 +1028,13 @@ comparison_all_models <- average_edge_counts %>%
 #Ratio comparison plot
 ggplot() +
   geom_line(data = comparison_all_models,
-            aes(x = log10(Area), y = Observed_by_Modeled),
+            aes(x = log_area.x, y = Observed_by_Modeled),
             color = trial_colors["6"]) +
   geom_line(data = comparison_all_models,
-            aes(x = log10(Area), y = Observed_by_Calibration),
+            aes(x = log_area.x, y = Observed_by_Calibration),
             color = trial_colors["8"]) +
   geom_line(data = comparison_all_models,
-            aes(x = log10(Area), y = Ratio),
+            aes(x = log_area.x, y = Ratio),
             color = trial_colors["9"]) +
   labs(
     x = expression(log[10](Area)~"(microns)"),
@@ -1037,17 +1062,17 @@ line_types <- c(
 ggplot() +
   # Observed edge data
   geom_line(data = average_edge_binned, 
-            aes(x = log10(Area), y = log10(Average_Count), 
+            aes(x = log_area, y = log_count, 
                 color = factor(Trial)), 
             linetype = line_types["Observed"]) +
   # Edge model data
   geom_line(data = average_model_binned,
-            aes(x = log10(Area), y = log10(Average_Count), 
+            aes(x = log_area, y = log_count, 
                 color = factor(Trial)),
             linetype = line_types["Modeled"]) +
   # Calibration data
   geom_line(data = average_calibration_binned,
-            aes(x = log10(Area), y = log10(Average_Count), 
+            aes(x = log_area, y = log_count, 
                 color = factor(Trial)),
             linetype = line_types["Calibration"]) +
   scale_color_manual(values = trial_colors, name = "Trial") +
@@ -1063,37 +1088,37 @@ ggplot() +
 binned_mean_dist <- average_edge_binned %>% 
   full_join(average_model_binned, by = c("Trial", "Area"), suffix = c("_edge", "_model")) %>% 
   full_join(average_calibration_binned, by = c("Trial", "Area")) %>% 
-  group_by(Area) %>%
+  group_by(log_area) %>%
   summarize(
-    Observed_edge_counts = mean(Average_Count_edge, na.rm = TRUE),
-    Modeled_edge_counts = mean(Average_Count_model, na.rm = TRUE),
-    Observed_Calibration_counts = mean(Average_Count, na.rm = TRUE),
+    Observed_edge_counts = mean(log_count_edge, na.rm = TRUE),
+    Modeled_edge_counts = mean(log_count_model, na.rm = TRUE),
+    Observed_Calibration_counts = mean(log_count, na.rm = TRUE),
     .groups = "drop"
   ) %>% 
   mutate(
-    Modeled_edge_with_adhesion_counts = Modeled_edge_counts/(2*(sqrt(Area/pi))),
-    Calibration_with_adhesion_counts = Observed_Calibration_counts/(2*(sqrt(Area/pi)))
+    Modeled_edge_with_adhesion_counts = Modeled_edge_counts/(2*(sqrt(10^(log_area)/pi))),
+    Calibration_with_adhesion_counts = Observed_Calibration_counts/(2*(sqrt(10^(log_area)/pi)))
   )
 
 # Create mean distribution plot for binned data
 ggplot() +
   geom_line(data = binned_mean_dist, 
-            aes(x = log10(Area), y = log10(Observed_edge_counts)),
+            aes(x = log_area, y = Observed_edge_counts),
             color = trial_colors["6"]) +
   geom_line(data = binned_mean_dist, 
-            aes(x = log10(Area), y = log10(Modeled_edge_counts)),
+            aes(x = log_area, y = Modeled_edge_counts),
             color = trial_colors["8"]) +
   geom_line(data = binned_mean_dist, 
-            aes(x = log10(Area), y = log10(Observed_Calibration_counts)),
+            aes(x =log_area, y = Observed_Calibration_counts),
             color = trial_colors["9"]) +
-  geom_line(data = binned_mean_dist, 
-            aes(x = log10(Area), y = log10(Modeled_edge_with_adhesion_counts)),
-            color = trial_colors["8"], 
-            linetype = "dashed") +
-  geom_line(data = binned_mean_dist, 
-            aes(x = log10(Area), y = log10(Calibration_with_adhesion_counts)),
-            color = trial_colors["9"], 
-            linetype = "dashed") +
+  # geom_line(data = binned_mean_dist, 
+  #           aes(x = log10(Area), y = log10(Modeled_edge_with_adhesion_counts)),
+  #           color = trial_colors["8"], 
+  #           linetype = "dashed") +
+  # geom_line(data = binned_mean_dist, 
+  #           aes(x = log10(Area), y = log10(Calibration_with_adhesion_counts)),
+  #           color = trial_colors["9"], 
+  #           linetype = "dashed") +
   labs(
     x = expression(log[10](Area)~"(microns)"),
     y = "log10(Particle Count)",
@@ -1107,12 +1132,12 @@ binned_ratios <- average_edge_binned %>%
   full_join(average_model_binned, by = c("Trial", "Area"), suffix = c("_edge", "_model")) %>% 
   full_join(average_calibration_binned, by = c("Trial", "Area")) %>% 
   mutate(
-    Ratio = 1/(2*(sqrt(Area/pi))),
-    Observed_by_Modeled = Average_Count_edge/Average_Count_model,
-    Observed_by_Calibration = Average_Count_edge/Average_Count,
-    Modeled_by_Calibration = Average_Count_model/Average_Count
+    Ratio = 1/(2*(sqrt(10^(log_area)/pi))),
+    Observed_by_Modeled = log_count_edge/log_count_model,
+    Observed_by_Calibration = log_count_edge/log_count,
+    Modeled_by_Calibration = log_count_model/log_count
   ) %>% 
-  group_by(Area) %>%
+  group_by(log_area) %>%
   summarize(
     Observed_by_Modeled = mean(Observed_by_Modeled, na.rm = TRUE),
     Observed_by_Calibration = mean(Observed_by_Calibration, na.rm = TRUE),
@@ -1124,13 +1149,13 @@ binned_ratios <- average_edge_binned %>%
 # Create ratio plot for binned data
 ggplot() +
   geom_line(data = binned_ratios,
-            aes(x = log10(Area), y = Observed_by_Modeled),
+            aes(x = log_area, y = Observed_by_Modeled),
             color = trial_colors["6"]) +
   geom_line(data = binned_ratios,
-            aes(x = log10(Area), y = Observed_by_Calibration),
+            aes(x = log_area, y = Observed_by_Calibration),
             color = trial_colors["8"]) +
   geom_line(data = binned_ratios,
-            aes(x = log10(Area), y = Ratio),
+            aes(x = log_area, y = Ratio),
             color = trial_colors["9"]) +
   labs(
     x = expression(log[10](Area)~"(microns)"),
@@ -1143,195 +1168,648 @@ ggplot() +
 
 ```
 
-```{r}
-# Add adhesion factor calculation to model data
-average_model_with_adhesion <- average_model_all_trials %>%
-  mutate(
-    Average_Count_with_adhesion = Average_Count/(2*(sqrt(Area/pi)))
-  )
 
-# Calculate IEST fit prediction for edge
-edge_iest_prediction <- average_surface_all_trials %>%
+```{r}
+
+
+# Calculate surface binned fit
+surface_binned_fit <- overall_average_surface_binned %>%
+  summarise(
+    slope = coef(lm(Average_Count ~ log_area))[2],
+    intercept = coef(lm(Average_Count ~ log_area))[1],
+    .groups = "drop"
+  ) %>%
+  mutate(PCL = 10^(sqrt(-intercept/slope)))
+#logN = -0.926(log2 (x) - log2 (PCL))
+
+
+
+# For calibration data
+calibration_normalized <- overall_average_calibration_binned %>% 
   mutate(
-    Predicted_Count = 10^(surface_binned_fit$intercept + surface_binned_fit$slope * log10(Area)) / (2*(sqrt(Area/pi)))
+    Total_Count = sum(10^Average_Count, na.rm = TRUE),
+    Normalized_Count = 10^Average_Count / Total_Count) 
+  
+# For edge data
+edge_normalized <- overall_average_binned %>%
+  mutate(
+    Total_Count = sum(10^log_count, na.rm = TRUE),
+    Normalized_Count = 10^log_count / Total_Count ) 
+
+
+
+
+# First, create Figure 15 (Etched Samples)
+# Modify theme for better match
+plot_theme <- theme_minimal() +
+  theme(
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95"),
+    text = element_text(size = 10),
+    legend.position = "top",
+    legend.text = element_text(size = 8),
+    plot.title = element_text(size = 12, hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5)
   )
 
 # Surface Plot
 p1 <- ggplot() +
-  # Measured surface data
-  geom_line(data = average_surface_all_trials,
-            aes(x = Area, y = Average_Count, color = "Measured on Surface")) +
-  # IEST fit line
-  geom_abline(data = surface_binned_fit,
-              aes(slope = slope, intercept = intercept, linetype = "IEST Fit"),
-              color = "black") +
-  scale_x_log10(limits = c(10, 1e5),
-                breaks = scales::trans_breaks("log10", function(x) 10^x),
-                labels = scales::trans_format("log10", scales::math_format(10^.x))) +
-  scale_y_log10(limits = c(1, 1e6)) +
-  scale_color_manual(values = c("Measured on Surface" = "#0072BD")) +
-  scale_linetype_manual(values = c("IEST Fit" = "dashed")) +
+  geom_line(data = overall_average_surface_binned,
+            aes(x = 10^log_area, y = 10^Average_Count),
+            color = "#0072BD") +
+  geom_abline(
+    data = surface_binned_fit,
+    aes(slope = slope, intercept = intercept),
+    linetype = "dashed",
+    color = "black"
+  ) +
+  scale_x_log10(
+    limits = c(10, 1e5),
+    breaks = 10^(1:5),
+    labels = scales::scientific_format(digits = 1)
+  ) +
+  scale_y_log10(
+    limits = c(1, 1e6),
+    breaks = 10^(0:6)
+  ) +
   labs(
     x = expression("Overhanging Particle Area ("*mu*m^2*")"),
     y = "# Surface Particles"
   ) +
-  theme_minimal() +
-  theme(
-    panel.grid.major = element_line(color = "gray90"),
-    panel.grid.minor = element_line(color = "gray95"),
-    plot.title = element_text(size = 12, hjust = 0.5),
-    legend.position = "top",
-    legend.title = element_blank()
-  ) +
-  annotate("text", x = 100, y = 1e5, 
-           label = paste0("IEST Fit: PCL ", round(surface_binned_fit$PCL), 
-                         ", slope ", round(surface_binned_fit$slope, 2)),
-           hjust = 0)
+  plot_theme +
+  annotate(
+    "text",
+    x = 100,
+    y = 1e5,
+    label = sprintf("IEST Fit: PCL %d, slope %.2f",
+                   round(surface_binned_fit$PCL),
+                   surface_binned_fit$slope),
+    hjust = 0
+  )
 
 # Edge Plot
 p2 <- ggplot() +
-  # Measured edge data
-  geom_line(data = average_edge_all_trials,
-            aes(x = Area, y = Average_Count, color = "Measured on Edge")) +
-  # Predicted from surface
-  geom_line(data = average_model_all_trials,
-            aes(x = Area, y = Average_Count, color = "Predicted from Surface")) +
-  # Predicted from IEST fit
-  geom_line(data = edge_iest_prediction,
-            aes(x = Area, y = Predicted_Count, color = "Predicted from IEST Fit"),
-            linetype = "dashed") +
-  # Predicted with adhesion factor
-  geom_line(data = average_model_with_adhesion,
-            aes(x = Area, y = Average_Count_with_adhesion, 
-                color = "Predicted with Adhesion Factor"),
+  geom_line(data = overall_average_binned,
+            aes(x = 10^log_area, y = 10^log_count),
+            color = "#0072BD") +
+  geom_line(data = overall_average_model_binned,
+            aes(x = 10^log_area, y = 10^Average_Count),
+            color = "#D95319") +
+  geom_line(data = overall_average_model_binned,
+            aes(x = 10^log_area, y = (10^Average_Count)/(2*(sqrt(10^(log_area)/pi)))),
+            color = "#7E2F8E",
             linetype = "dotted") +
-  scale_x_log10(limits = c(10, 1e5),
-                breaks = scales::trans_breaks("log10", function(x) 10^x),
-                labels = scales::trans_format("log10", scales::math_format(10^.x))) +
-  scale_y_log10(limits = c(1, 1e3)) +
-  scale_color_manual(values = c(
-    "Measured on Edge" = "#0072BD",
-    "Predicted from Surface" = "#D95319",
-    "Predicted from IEST Fit" = "#EDB120",
-    "Predicted with Adhesion Factor" = "#7E2F8E"
-  )) +
+  scale_x_log10(
+    limits = c(10, 1e5),
+    breaks = 10^(1:5),
+    labels = scales::scientific_format(digits = 1)
+  ) +
+  scale_y_log10(
+    limits = c(1, 1e3),
+    breaks = 10^(0:3)
+  ) +
   labs(
     x = expression("Overhanging Particle Area ("*mu*m^2*")"),
     y = "# Edge Particles"
   ) +
-  theme_minimal() +
-  theme(
-    panel.grid.major = element_line(color = "gray90"),
-    panel.grid.minor = element_line(color = "gray95"),
-    plot.title = element_text(size = 12, hjust = 0.5),
-    legend.position = "top",
-    legend.title = element_blank()
-  )
+  plot_theme
 
 # Arrange plots side by side with main title
-library(gridExtra)
-grid.arrange(p1, p2, ncol = 2, 
-             top = textGrob("Etched Samples", gp = gpar(fontsize = 14, fontface = "bold")))
-```
-```{r}
-# Use the existing binned data and normalize
-# For calibration data
-calibration_normalized <- average_calibration_binned %>%
-  filter(Trial == c(8,9,10)) %>% 
-  group_by(Trial) %>%
-  mutate(
-    Total_Count = sum(Average_Count, na.rm = TRUE),
-    Normalized_Count = Average_Count / Total_Count
-  ) %>%
-  group_by(Area) %>%
-  summarize(
-    Average_Normalized_Count = mean(Normalized_Count, na.rm = TRUE),
-    .groups = "drop"
-  )
+figure_15 <- grid.arrange(
+  p1, p2,
+  ncol = 2,
+  top = textGrob("Etched Samples", gp = gpar(fontsize = 14, fontface = "bold"))
+)
 
-# For edge data
-edge_normalized <- average_edge_binned %>%
-  group_by(Trial) %>%
-  mutate(
-    Total_Count = sum(Average_Count, na.rm = TRUE),
-    Normalized_Count = Average_Count / Total_Count
-  ) %>%
-  group_by(Area) %>%
-  summarize(
-    Average_Normalized_Count = mean(Normalized_Count, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Calculate ratio of etched to calibration using binned data
-edge_ratio <- edge_normalized %>%
-  full_join(calibration_normalized, by = "Area", suffix = c("_edge", "_cal")) %>%
-  mutate(
-    Ratio = Average_Normalized_Count_edge / Average_Normalized_Count_cal
-  ) %>%
-  filter(!is.infinite(Ratio), !is.na(Ratio))
-
-# Calculate theoretical 1/diameter curve
-theoretical_ratio <- edge_ratio %>%
-  mutate(
-    Diameter = 2 * sqrt(Area/pi),
-    Theoretical_Ratio = 1/Diameter
-  )
-
-# Create normalized distribution plot with binned data
-p1 <- ggplot() +
+# Now create Figure 16 (Comparative Analysis)
+# Normalized Distribution Plot
+p3 <- ggplot() +
   geom_line(data = calibration_normalized,
-            aes(x = Area, y = Average_Normalized_Count, color = "Calibration Mask")) +
+            aes(x = 10^log_area, y = Normalized_Count),
+            color = "#0072BD") +
   geom_line(data = edge_normalized,
-            aes(x = Area, y = Average_Normalized_Count, color = "Etched Samples")) +
-  scale_x_log10(limits = c(10, 1e4),
-                breaks = scales::trans_breaks("log10", function(x) 10^x),
-                labels = scales::trans_format("log10", scales::math_format(10^.x))) +
-  scale_y_log10(limits = c(1e-4, 1),
-                breaks = scales::trans_breaks("log10", function(x) 10^x),
-                labels = scales::trans_format("log10", scales::math_format(10^.x))) +
-  scale_color_manual(values = c("Calibration Mask" = "#0072BD", 
-                               "Etched Samples" = "#D95319")) +
-  labs(
-    title = "Normalized Edge Particulate Distributions",
-    x = expression("Particle Area ("*mu*m^2*")"),
-    y = "Proportion of Particulates"
+            aes(x = 10^log_area, y = Normalized_Count),
+            color = "#D95319") +
+  scale_x_log10(
+    limits = c(10, 1e4),
+    breaks = c(10, 100, 1000, 10000),
+    labels = scales::scientific_format(digits = 1)
   ) +
-  theme_minimal() +
-  theme(
-    panel.grid.major = element_line(color = "gray90"),
-    panel.grid.minor = element_line(color = "gray95"),
-    legend.position = "top",
-    legend.title = element_blank()
-  )
+  scale_y_log10(
+    limits = c(1e-4, 1),
+    breaks = 10^seq(-4, 0, by = 1)
+  ) +
+  labs(
+    x = expression("Particle Area ("*mu*m^2*")"),
+    y = "Proportion of Particulates",
+    title = "Normalized Edge Particulate Distributions"
+  ) +
+  plot_theme
 
-# Create ratio plot with binned data
-p2 <- ggplot() +
-  geom_line(data = edge_ratio,
-            aes(x = Area, y = Ratio, color = "Ratio")) +
-  geom_line(data = theoretical_ratio,
-            aes(x = Area, y = Theoretical_Ratio, color = "1/diam. Fitted Curve"),
+# Ratio Plot
+p4 <- ggplot() +
+  geom_line(data = binned_ratios,
+            aes(x = log_area, y = Observed_by_Calibration),
+            color = "#0072BD") +
+  geom_line(data = binned_ratios,
+            aes(x = log_area, y = Ratio),
+            color = "#D95319",
             linetype = "dashed") +
-  scale_x_log10(limits = c(10, 1e4),
-                breaks = scales::trans_breaks("log10", function(x) 10^x),
-                labels = scales::trans_format("log10", scales::math_format(10^.x))) +
-  scale_y_continuous(limits = c(0, 2)) +
-  scale_color_manual(values = c("Ratio" = "#0072BD",
-                               "1/diam. Fitted Curve" = "#D95319")) +
-  labs(
-    title = "Missing Edge Particulate Ratio",
-    x = expression("Particle Area ("*mu*m^2*")"),
-    y = "Edge Particulate Ratio\nEtched/Calibration"
+  scale_x_continuous(
+    limits = c(0, 4)) +
+  scale_y_continuous(
+    limits = c(0, 2),
+    breaks = seq(0, 2, 0.5)
   ) +
-  theme_minimal() +
-  theme(
-    panel.grid.major = element_line(color = "gray90"),
-    panel.grid.minor = element_line(color = "gray95"),
-    legend.position = "top",
-    legend.title = element_blank()
-  )
+  labs(
+    x = expression("Particle Area ("*mu*m^2*")"),
+    y = "Edge Particulate Ratio\nEtched/Calibration",
+    title = "Missing Edge Particulate Ratio"
+  ) +
+  plot_theme
 
 # Arrange plots side by side
-grid.arrange(p1, p2, ncol = 2, 
-             top = textGrob("Comparative Analysis", gp = gpar(fontsize = 14, fontface = "bold")))
+figure_16 <- grid.arrange(
+  p3, p4,
+  ncol = 2,
+  top = textGrob("Comparative Analysis", gp = gpar(fontsize = 14, fontface = "bold"))
+)
+```
+
+```{r}
+
+create_image_grob <- function(img_path) {
+  img <- readPNG(img_path)
+  rasterGrob(img, interpolate = TRUE)
+}
+
+# Function to create text grob for labels
+create_label <- function(text) {
+  textGrob(text, gp = gpar(fontsize = 12, fontface = "bold"))
+}
+
+
+# Figure 15 Comparison
+grid.arrange(
+  create_image_grob("/Users/brandontitensor/Desktop/College/Research/Dust_Contamination/starshade_dust_particle/data_analysis/Figure_15.png"),
+  arrangeGrob(p1, p2, ncol = 2),
+  ncol = 1,
+  heights = c(1, 1),
+  top = textGrob("Figure 15: Etched Samples Comparison", 
+                 gp = gpar(fontsize = 14, fontface = "bold"))
+)
+
+# Create layout for comparison
+compare_plots <- function(reference_img, generated_plot, title) {
+  grid.arrange(
+    reference_img, generated_plot,
+    ncol = 2,
+    top = textGrob(title, gp = gpar(fontsize = 14, fontface = "bold")),
+    widths = c(1, 1)
+  )
+}
+
+# Figure 16 Comparison
+grid.arrange(
+  create_image_grob("/Users/brandontitensor/Desktop/College/Research/Dust_Contamination/starshade_dust_particle/data_analysis/Figure_16.png"),
+  arrangeGrob(p3, p4, ncol = 2),
+  ncol = 1,
+  heights = c(1, 1),
+  top = textGrob("Figure 16: Comparative Analysis Comparison", 
+                 gp = gpar(fontsize = 14, fontface = "bold"))
+)
+
+```
+
+```{r,eval = F}
+# Calculate surface binned fit using consistent approach with earlier analysis
+surface_binned_fit <- overall_average_surface_binned %>%
+  filter(!is.na(Average_Count), !is.infinite(Average_Count)) %>%
+  summarise(
+    slope = coef(lm(Average_Count ~ log_area))[2],
+    intercept = coef(lm(Average_Count ~ log_area))[1],
+    .groups = "drop"
+  ) %>%
+  mutate(PCL = 10^(-intercept/slope))
+
+# Calculate IEST fit prediction for edge with proper scaling
+edge_iest_prediction <- average_surface_all_trials %>%
+  mutate(
+    # Use the geometric factor for edge prediction
+    Predicted_Count = 10^(surface_binned_fit$intercept + surface_binned_fit$slope * log10(Area)) / 
+      (2 * sqrt(Area/pi))
+  ) %>%
+  filter(!is.na(Predicted_Count), !is.infinite(Predicted_Count))
+
+# Normalize calibration data consistently with binning approach
+calibration_normalized <- overall_average_calibration_binned %>% 
+  mutate(
+    # Calculate total count excluding NA and infinite values
+    Total_Count = sum(10^Average_Count[!is.na(Average_Count) & !is.infinite(Average_Count)], 
+                     na.rm = TRUE),
+    # Normalize counts
+    Normalized_Count = 10^Average_Count / Total_Count
+  ) %>%
+  filter(!is.na(Normalized_Count), !is.infinite(Normalized_Count))
+
+# Normalize edge data with consistent approach
+edge_normalized <- overall_average_binned %>%
+  mutate(
+    # Calculate total count excluding NA and infinite values
+    Total_Count = sum(10^log_count[!is.na(log_count) & !is.infinite(log_count)], 
+                     na.rm = TRUE),
+    # Normalize counts
+    Normalized_Count = 10^log_count / Total_Count
+  ) %>%
+  filter(!is.na(Normalized_Count), !is.infinite(Normalized_Count))
+
+# Calculate average model with adhesion factor
+average_model_with_adhesion <- edge_model_data %>%
+  group_by(Area) %>%
+  summarise(
+    Average_Count = mean(Normalized_Cumulative_Count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # Apply adhesion factor
+    Average_Count_with_adhesion = Average_Count / (2 * sqrt(Area/pi))
+  ) %>%
+  filter(!is.na(Average_Count_with_adhesion), !is.infinite(Average_Count_with_adhesion))
+
+# Prepare binned ratios with proper filtering and calculations
+binned_ratios <- average_edge_binned %>% 
+  full_join(average_model_binned, 
+            by = c("Trial", "Area", "log_area"), 
+            suffix = c("_edge", "_model")) %>% 
+  full_join(average_calibration_binned, 
+            by = c("Trial", "Area", "log_area")) %>%
+  mutate(
+    # Calculate theoretical ratio
+    Ratio = 1/(2 * sqrt(10^log_area/pi)),
+    # Calculate observed ratios
+    Observed_by_Calibration = 10^log_count_edge / 10^log_count,
+    # Filter out invalid values
+    Observed_by_Calibration = ifelse(is.infinite(Observed_by_Calibration) | 
+                                   is.na(Observed_by_Calibration), 
+                                   NA, 
+                                   Observed_by_Calibration)
+  ) %>%
+  group_by(log_area) %>%
+  summarize(
+    Observed_by_Calibration = mean(Observed_by_Calibration, na.rm = TRUE),
+    Ratio = mean(Ratio, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(Observed_by_Calibration), 
+         !is.infinite(Observed_by_Calibration),
+         !is.na(Ratio),
+         !is.infinite(Ratio))
+
+
+
+# Surface Plot (p1)
+p1 <- ggplot() +
+  geom_line(data = overall_average_surface_binned,
+            aes(x = 10^log_area, y = 10^Average_Count),
+            color = trial_colors["8"]) +
+  geom_abline(
+    data = surface_binned_fit,
+    aes(slope = slope, intercept = intercept),
+    linetype = "dashed",
+    color = "black"
+  ) +
+  scale_x_log10(
+    limits = c(10, 1e5),
+    breaks = 10^(1:5),
+    labels = scales::scientific_format(digits = 1)
+  ) +
+  scale_y_log10(
+    limits = c(1, 1e6),
+    breaks = 10^(0:6)
+  ) +
+  labs(
+    x = expression("Overhanging Particle Area ("*mu*m^2*")"),
+    y = "# Surface Particles",
+    title = "Surface Particle Distribution"
+  ) +
+  custom_theme +
+  annotate(
+    "text",
+    x = 100,
+    y = 1e5,
+    label = sprintf("IEST Fit: PCL %d, slope %.2f",
+                   round(surface_binned_fit$PCL),
+                   surface_binned_fit$slope),
+    hjust = 0,
+    size = 3.5
+  )
+
+# Edge Plot (p2)
+p2 <- ggplot() +
+  geom_line(data = overall_average_binned,
+            aes(x = 10^log_area, y = 10^log_count),
+            color = trial_colors["8"]) +
+  geom_line(data = overall_average_model_binned,
+            aes(x = 10^log_area, y = 10^Average_Count),
+            color = trial_colors["9"]) +
+  geom_line(data = edge_iest_prediction,
+            aes(x = Area, y = Predicted_Count),
+            color = trial_colors["7"],
+            linetype = "dashed") +
+  geom_line(data = average_model_with_adhesion,
+            aes(x = Area, y = Average_Count_with_adhesion),
+            color = trial_colors["10"],
+            linetype = "dotted") +
+  scale_x_log10(
+    limits = c(10, 1e5),
+    breaks = 10^(1:5),
+    labels = scales::scientific_format(digits = 1)
+  ) +
+  scale_y_log10(
+    limits = c(1, 1e3),
+    breaks = 10^(0:3)
+  ) +
+  labs(
+    x = expression("Overhanging Particle Area ("*mu*m^2*")"),
+    y = "# Edge Particles",
+    title = "Edge Particle Distribution"
+  ) +
+  custom_theme
+
+# Normalized Distribution Plot (p3)
+p3 <- ggplot() +
+  geom_line(data = calibration_normalized,
+            aes(x = 10^log_area, y = Normalized_Count),
+            color = trial_colors["8"]) +
+  geom_line(data = edge_normalized,
+            aes(x = 10^log_area, y = Normalized_Count),
+            color = trial_colors["9"]) +
+  scale_x_log10(
+    limits = c(10, 1e4),
+    breaks = c(10, 100, 1000, 10000),
+    labels = scales::scientific_format(digits = 1)
+  ) +
+  scale_y_log10(
+    limits = c(1e-4, 1),
+    breaks = 10^seq(-4, 0, by = 1)
+  ) +
+  labs(
+    x = expression("Particle Area ("*mu*m^2*")"),
+    y = "Proportion of Particulates",
+    title = "Normalized Edge Particulate Distributions"
+  ) +
+  custom_theme +
+  theme(legend.position = "none")
+
+# Ratio Plot (p4)
+p4 <- ggplot() +
+  geom_line(data = binned_ratios,
+            aes(x = log_area, y = Observed_by_Calibration),
+            color = trial_colors["8"]) +
+  geom_line(data = binned_ratios,
+            aes(x = log_area, y = Ratio),
+            color = trial_colors["9"],
+            linetype = "dashed") +
+  scale_x_continuous(
+    limits = c(0, 4)
+  ) +
+  scale_y_continuous(
+    limits = c(0, 2),
+    breaks = seq(0, 2, 0.5)
+  ) +
+  labs(
+    x = expression(log[10]*"(Particle Area) ("*mu*m^2*")"),
+    y = "Edge Particulate Ratio\nEtched/Calibration",
+    title = "Missing Edge Particulate Ratio"
+  ) +
+  custom_theme +
+  theme(legend.position = "none")
+
+# Create the combined figures using grid.arrange
+figure_15 <- grid.arrange(
+  p1, p2,
+  ncol = 2,
+  top = textGrob("Etched Samples", 
+                 gp = gpar(fontsize = 14, fontface = "bold"))
+)
+
+figure_16 <- grid.arrange(
+  p3, p4,
+  ncol = 2,
+  top = textGrob("Comparative Analysis", 
+                 gp = gpar(fontsize = 14, fontface = "bold"))
+)
+```
+
+```{r, eval = F}
+# Calculate surface cumulative fit
+surface_cumulative_fit <- overall_average_surface %>%
+  filter(!is.na(Average_Count), !is.infinite(Average_Count)) %>%
+  summarise(
+    slope = coef(lm(Average_Count ~ log_area))[2],
+    intercept = coef(lm(Average_Count ~ log_area))[1],
+    .groups = "drop"
+  ) %>%
+  mutate(PCL = 10^(-intercept/slope))
+
+# Calculate IEST fit prediction for edge using cumulative data
+edge_iest_prediction <- average_surface_counts %>%
+  arrange(Area) %>%
+  mutate(
+    # Use the geometric factor for edge prediction
+    Predicted_Count = 10^(surface_cumulative_fit$intercept + 
+                         surface_cumulative_fit$slope * log10(Area)) / 
+      (2 * sqrt(Area/pi))
+  ) %>%
+  filter(!is.na(Predicted_Count), !is.infinite(Predicted_Count))
+
+# Normalize cumulative calibration data
+calibration_normalized <- average_calibration_counts %>% 
+  arrange(Area) %>%
+  mutate(
+    Total_Count = sum(10^log_count[!is.na(log_count) & !is.infinite(log_count)], 
+                     na.rm = TRUE),
+    Normalized_Count = 10^log_count / Total_Count
+  ) %>%
+  filter(!is.na(Normalized_Count), !is.infinite(Normalized_Count))
+
+# Normalize cumulative edge data
+edge_normalized <- average_edge_counts %>%
+  arrange(Area) %>%
+  mutate(
+    Total_Count = sum(10^log_count[!is.na(log_count) & !is.infinite(log_count)], 
+                     na.rm = TRUE),
+    Normalized_Count = 10^log_count / Total_Count
+  ) %>%
+  filter(!is.na(Normalized_Count), !is.infinite(Normalized_Count))
+
+# Calculate cumulative model with adhesion factor
+average_model_with_adhesion <- edge_model_data %>%
+  arrange(Area) %>%
+  group_by(Area) %>%
+  summarise(
+    Average_Count = mean(Normalized_Cumulative_Count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Average_Count_with_adhesion = Average_Count / (2 * sqrt(Area/pi))
+  ) %>%
+  filter(!is.na(Average_Count_with_adhesion), !is.infinite(Average_Count_with_adhesion))
+
+# Calculate cumulative ratios
+cumulative_ratios <- average_edge_counts %>%
+  full_join(edge_model_data, by = c("Area"), suffix = c("_edge", "_model")) %>%
+  full_join(average_calibration_counts, by = c("Area"), suffix = c("", "_cal")) %>%
+  mutate(
+    Ratio = 1/(2 * sqrt(Area/pi)),
+    Observed_by_Calibration = 10^log_count / 10^log_count_cal,
+    Observed_by_Calibration = ifelse(is.infinite(Observed_by_Calibration) | 
+                                   is.na(Observed_by_Calibration), 
+                                   NA, 
+                                   Observed_by_Calibration)
+  ) %>%
+  group_by(log_area.x) %>%
+  summarize(
+    Observed_by_Calibration = mean(Observed_by_Calibration, na.rm = TRUE),
+    Ratio = mean(Ratio, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(!is.na(Observed_by_Calibration), 
+         !is.infinite(Observed_by_Calibration),
+         !is.na(Ratio),
+         !is.infinite(Ratio))
+
+# Surface Plot (p1)
+p1 <- ggplot() +
+  geom_line(data = overall_average_surface,
+            aes(x = 10^log_area, y = 10^Average_Count),
+            color = trial_colors["8"]) +
+  geom_abline(
+    data = surface_cumulative_fit,
+    aes(slope = slope, intercept = intercept),
+    linetype = "dashed",
+    color = "black"
+  ) +
+  scale_x_log10(
+    limits = c(10, 1e5),
+    breaks = 10^(1:5),
+    labels = scales::scientific_format(digits = 1)
+  ) +
+  scale_y_log10(
+    limits = c(1, 1e6),
+    breaks = 10^(0:6)
+  ) +
+  labs(
+    x = expression("Overhanging Particle Area ("*mu*m^2*")"),
+    y = "Cumulative Surface Particles",
+    title = "Cumulative Surface Particle Distribution"
+  ) +
+  custom_theme +
+  annotate(
+    "text",
+    x = 100,
+    y = 1e5,
+    label = sprintf("IEST Fit: PCL %d, slope %.2f",
+                   round(surface_cumulative_fit$PCL),
+                   surface_cumulative_fit$slope),
+    hjust = 0,
+    size = 3.5
+  )
+
+# Edge Plot (p2)
+p2 <- ggplot() +
+  geom_line(data = average_edge_counts,
+            aes(x = Area, y = 10^log_count),
+            color = trial_colors["8"]) +
+  geom_line(data = edge_model_data,
+            aes(x = Area, y = Normalized_Cumulative_Count),
+            color = trial_colors["9"]) +
+  geom_line(data = edge_iest_prediction,
+            aes(x = Area, y = Predicted_Count),
+            color = trial_colors["7"],
+            linetype = "dashed") +
+  geom_line(data = average_model_with_adhesion,
+            aes(x = Area, y = Average_Count_with_adhesion),
+            color = trial_colors["10"],
+            linetype = "dotted") +
+  scale_x_log10(
+    limits = c(10, 1e5),
+    breaks = 10^(1:5),
+    labels = scales::scientific_format(digits = 1)
+  ) +
+  scale_y_log10(
+    limits = c(1, 1e3),
+    breaks = 10^(0:3)
+  ) +
+  labs(
+    x = expression("Overhanging Particle Area ("*mu*m^2*")"),
+    y = "Cumulative Edge Particles",
+    title = "Cumulative Edge Particle Distribution"
+  ) +
+  custom_theme
+
+# Normalized Distribution Plot (p3)
+p3 <- ggplot() +
+  geom_line(data = calibration_normalized,
+            aes(x = Area, y = Normalized_Count),
+            color = trial_colors["8"]) +
+  geom_line(data = edge_normalized,
+            aes(x = Area, y = Normalized_Count),
+            color = trial_colors["9"]) +
+  scale_x_log10(
+    limits = c(10, 1e4),
+    breaks = c(10, 100, 1000, 10000),
+    labels = scales::scientific_format(digits = 1)
+  ) +
+  scale_y_log10(
+    limits = c(1e-4, 1),
+    breaks = 10^seq(-4, 0, by = 1)
+  ) +
+  labs(
+    x = expression("Particle Area ("*mu*m^2*")"),
+    y = "Cumulative Proportion of Particulates",
+    title = "Normalized Cumulative Edge Particulate Distributions"
+  ) +
+  custom_theme +
+  theme(legend.position = "none")
+
+# Ratio Plot (p4)
+p4 <- ggplot() +
+  geom_line(data = cumulative_ratios,
+            aes(x = log_area.x, y = Observed_by_Calibration),
+            color = trial_colors["8"]) +
+  geom_line(data = cumulative_ratios,
+            aes(x = log_area.x, y = Ratio),
+            color = trial_colors["9"],
+            linetype = "dashed") +
+  scale_x_continuous(
+    limits = c(0, 4)
+  ) +
+  scale_y_continuous(
+    limits = c(0, 2),
+    breaks = seq(0, 2, 0.5)
+  ) +
+  labs(
+    x = expression(log[10]*"(Particle Area) ("*mu*m^2*")"),
+    y = "Cumulative Edge Particulate Ratio\nEtched/Calibration",
+    title = "Cumulative Missing Edge Particulate Ratio"
+  ) +
+  custom_theme +
+  theme(legend.position = "none")
+
+# Create the combined figures using grid.arrange
+figure_15 <- grid.arrange(
+  p1, p2,
+  ncol = 2,
+  top = textGrob("Cumulative Analysis of Etched Samples", 
+                 gp = gpar(fontsize = 14, fontface = "bold"))
+)
+
+figure_16 <- grid.arrange(
+  p3, p4,
+  ncol = 2,
+  top = textGrob("Cumulative Comparative Analysis", 
+                 gp = gpar(fontsize = 14, fontface = "bold"))
+)
 ```
 
