@@ -1212,8 +1212,8 @@ p3 <- ggplot() +
   ) +
   scale_color_manual(
     values = c(
-      "Calibration Mask" = "#0072BD",
-      "Etched Samples" = "#D95319"
+      "Calibration Mask" = "#D95319",
+      "Etched Samples" = "#0072BD"
     )
   ) +
   labs(
