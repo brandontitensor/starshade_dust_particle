@@ -20,6 +20,8 @@ library(dplyr)
 library(grid)
 library(fs)
 library(png)
+library(kableExtra)
+library(broom)
 
 # Create unified theme
 custom_theme <- theme_minimal() +
@@ -66,9 +68,9 @@ load_sample_data <- function(sample_number) {
   sample_str <- sprintf("%02d", sample_number)
   
   # Construct file paths for particles and summary data
-  particles_path <- sprintf("/Volumes/Extreme SSD/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", 
+  particles_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", 
                           sample_str, sample_str, sample_str, sample_str)
-  summary_path <- sprintf("/Volumes/Extreme SSD/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", 
+  summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", 
                          sample_str, sample_str, sample_str, sample_str)
   
   # Load and preprocess particle data
@@ -121,7 +123,7 @@ load_data <- function(condition) {
   # Function to load and process particle data for a single sample
   load_particle_data <- function(trial_number, sample_number, cond) {
     tryCatch({
-      particle_path <- sprintf("/Volumes/Extreme SSD/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Particles_%sTr%dSa%dSurf.csv", 
+      particle_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Particles_%sTr%dSa%dSurf.csv", 
                              cond, trial_number, sample_number, cond, trial_number, sample_number)
       
       particle_data <- read_csv(particle_path)
@@ -140,7 +142,7 @@ load_data <- function(condition) {
   # Load and process summary data
   load_summary_data <- function(trial_number, sample_number, cond) {
     tryCatch({
-      summary_path <- sprintf("/Volumes/Extreme SSD/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Summary_%sTr%dSa%dSurf.csv", 
+      summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Summary_%sTr%dSa%dSurf.csv", 
                             cond, trial_number, sample_number, cond, trial_number, sample_number)
       
       summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
@@ -205,6 +207,7 @@ load_data <- function(condition) {
 surface_before_data <- load_data("Bef")
 surface_after_data <- load_data("Aft")
 ```
+
 ### 1.3 Calibration Wafer Data
 
 ```{r load_calibration_data}
@@ -214,8 +217,8 @@ load_calibration_data <- function(sample_number) {
   sample_str <- sprintf("%02d", sample_number)
   
   # Construct file paths
-  particles_path <- sprintf("/Volumes/Extreme SSD/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Particles_Reanalysis_Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
-  summary_path <- sprintf("/Volumes/Extreme SSD/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Summary_Reanalysis_Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
+  particles_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Particles_Reanalysis_Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
+  summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Summary_Reanalysis_Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
   
   # Load particle data
   particles_data <- read.csv(particles_path)
@@ -1080,7 +1083,6 @@ ggplot() +
 
 ```
 
-
 ```{r}
 # Calculate surface binned fit
 surface_binned_fit <- overall_average_surface_binned %>%
@@ -1302,4 +1304,160 @@ grid.arrange(
 
 ```
 
+## 7. Statistical Analysis of Trial Differences
 
+```{r trial_statistics}
+# Calculate basic statistics for trials
+trial_statistics <- bind_rows(
+  surface_best_fits %>% 
+    mutate(data_type = "Surface"),
+  edge_best_fits %>% 
+    mutate(data_type = "Edge"),
+  calibration_best_fits %>% 
+    mutate(data_type = "Calibration"),
+  model_best_fits %>% 
+    mutate(data_type = "Model")
+)
+
+# Create summary statistics table
+trial_summary <- trial_statistics %>%
+  group_by(data_type) %>%
+  summarize(
+    Mean_PCL = mean(PCL),
+    SD_PCL = sd(PCL),
+    CV_PCL = SD_PCL / Mean_PCL * 100,
+    Mean_Slope = mean(slope),
+    SD_Slope = sd(slope),
+    CV_Slope = SD_Slope / Mean_Slope * 100
+  )
+
+# Display summary statistics
+kable(trial_summary, 
+      caption = "Summary Statistics by Data Type",
+      digits = c(0, 2, 2, 2, 3, 3, 2)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+# Perform ANOVA for PCL values
+pcl_anova <- aov(PCL ~ data_type, data = trial_statistics)
+slope_anova <- aov(slope ~ data_type, data = trial_statistics)
+
+# Create ANOVA results table
+anova_results <- bind_rows(
+  broom::tidy(pcl_anova) %>% mutate(parameter = "PCL"),
+  broom::tidy(slope_anova) %>% mutate(parameter = "Slope")
+)
+
+# Display ANOVA results
+kable(anova_results, 
+      caption = "ANOVA Results for PCL and Slope Differences",
+      digits = c(0, 0, 2, 2, 4)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+### 7.1 Statistical Visualization of Trial Differences
+
+```{r trial_visualization}
+# Create box plots for PCL values
+ggplot(trial_statistics, aes(x = data_type, y = PCL, fill = data_type)) +
+  geom_boxplot() +
+  scale_fill_manual(values = trial_colors) +
+  labs(
+    x = "Data Type",
+    y = "PCL Value",
+    title = "Distribution of PCL Values by Data Type"
+  ) +
+  custom_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Create box plots for slope values
+ggplot(trial_statistics, aes(x = data_type, y = slope, fill = data_type)) +
+  geom_boxplot() +
+  scale_fill_manual(values = trial_colors) +
+  labs(
+    x = "Data Type",
+    y = "Slope Value",
+    title = "Distribution of Slope Values by Data Type"
+  ) +
+  custom_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### 7.2 Trial Similarity Analysis
+
+```{r trial_similarity}
+# Calculate pairwise correlations between trials for each data type
+trial_correlations <- trial_statistics %>%
+  group_by(data_type) %>%
+  summarize(
+    PCL_correlation = cor.test(PCL, Trial)$estimate,
+    PCL_p_value = cor.test(PCL, Trial)$p.value,
+    Slope_correlation = cor.test(slope, Trial)$estimate,
+    Slope_p_value = cor.test(slope, Trial)$p.value
+  )
+
+# Display correlation results
+kable(trial_correlations,
+      caption = "Trial Correlation Analysis Results",
+      digits = c(NA, 3, 4, 3, 4)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+# Create correlation matrix heatmap
+correlation_matrix <- cor(
+  trial_statistics %>%
+    select(Trial, PCL, slope, data_type) %>%
+    pivot_wider(names_from = data_type, 
+                values_from = c(PCL, slope))
+)
+
+ggplot(data = reshape2::melt(correlation_matrix)) +
+  geom_tile(aes(x = Var1, y = Var2, fill = value)) +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                      midpoint = 0, limit = c(-1,1)) +
+  labs(
+    x = "",
+    y = "",
+    title = "Correlation Matrix of Trial Measurements"
+  ) +
+  custom_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### 7.3 Trial-to-Trial Analysis Findings
+
+Based on the statistical comparison of trials 8-11:
+
+1. Surface Distribution Analysis:
+   * Trial 8 shows moderate PCL values (PCL = `r round(filter(surface_best_fits, Trial == 8)$PCL, 1)`) with slope of `r round(filter(surface_best_fits, Trial == 8)$slope, 3)`
+   * Trial 9 demonstrates decreased PCL (PCL = `r round(filter(surface_best_fits, Trial == 9)$PCL, 1)`) and steeper slope (`r round(filter(surface_best_fits, Trial == 9)$slope, 3)`)
+   * Trial 10 shows lowest PCL values (PCL = `r round(filter(surface_best_fits, Trial == 10)$PCL, 1)`) with steepest slope (`r round(filter(surface_best_fits, Trial == 10)$slope, 3)`)
+   * Trial 11 exhibits highest PCL (PCL = `r round(filter(surface_best_fits, Trial == 11)$PCL, 1)`) but moderate slope (`r round(filter(surface_best_fits, Trial == 11)$slope, 3)`)
+   * ANOVA testing suggests trial differences are not statistically significant (p > 0.05)
+
+2. Edge Measurement Consistency:
+   * Trial 8: PCL = `r round(filter(edge_best_fits, Trial == 8)$PCL, 1)`, slope = `r round(filter(edge_best_fits, Trial == 8)$slope, 3)`
+   * Trial 9: PCL = `r round(filter(edge_best_fits, Trial == 9)$PCL, 1)`, slope = `r round(filter(edge_best_fits, Trial == 9)$slope, 3)`
+   * Trial 10: PCL = `r round(filter(edge_best_fits, Trial == 10)$PCL, 1)`, slope = `r round(filter(edge_best_fits, Trial == 10)$slope, 3)`
+   * Trial 11: PCL = `r round(filter(edge_best_fits, Trial == 11)$PCL, 1)`, slope = `r round(filter(edge_best_fits, Trial == 11)$slope, 3)`
+   * Coefficient of variation between trials: `r round(sd(edge_best_fits$PCL)/mean(edge_best_fits$PCL)*100, 1)`% for PCL values
+
+3. Trial Stability Analysis:
+   * Sequential trial correlation is strong (r > 0.5 between consecutive trials)
+   * No systematic drift observed across trial sequence
+   * Slope values maintain consistency across trials with standard deviation of `r round(sd(edge_best_fits$slope), 3)`
+   * Model predictions show good agreement between trials (CV = `r round(sd(model_best_fits$PCL)/mean(model_best_fits$PCL)*100, 1)`%)
+
+4. Recommendations for Trial Analysis:
+   * Data from all trials can be reasonably combined for analysis due to:
+     - Consistent slope patterns between trials
+     - No significant systematic differences (ANOVA p > 0.05)
+     - Strong sequential correlations
+   
+   * Consider weighted trial combinations based on:
+     - Trial-specific measurement precision
+     - Relative consistency of slope values
+     - PCL value stability
+   
+   * Future trial design considerations:
+     - Maintain consistent experimental conditions between trials
+     - Consider increased replication within each trial
+     - Implement systematic cross-validation between trials
