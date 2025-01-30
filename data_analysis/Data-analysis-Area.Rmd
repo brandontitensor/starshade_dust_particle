@@ -292,10 +292,25 @@ new_sample_areas <- surface_before_data$summary_data %>%
 
 
 # Function to get area-based counts
-get_area_counts <- function(data, normalization_factor) {
-  sapply(area_thresholds, function(x) {
-    sum(data$Area > x) * normalization_factor
-  })
+
+get_area_counts <- function(data, area_thresholds, normalization_factor) {
+  # Initialize counts vector
+  counts <- numeric(length(area_thresholds))
+  
+  # For bins except the last one
+  for(i in 1:(length(area_thresholds) - 1)) {
+    counts[i] <- sum(data$Area >= area_thresholds[i] & 
+                    data$Area < area_thresholds[i + 1]) * normalization_factor
+  }
+  
+  # For the last bin
+  counts[length(area_thresholds)] <- sum(data$Area >= area_thresholds[length(area_thresholds)]) * normalization_factor
+  
+  # Return results in the same format as expected by the original code
+  tibble(
+    Area = area_thresholds,
+    Count = counts
+  )
 }
 
 
@@ -305,7 +320,7 @@ surface_before_counts <- surface_before_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
     norm_factor <- 0.1 /  new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
-    counts <- get_area_counts(.x, norm_factor)
+    counts <- get_area_counts(.x,area_thresholds, norm_factor)
     tibble(
       Area = area_thresholds,
       Count = counts
@@ -316,7 +331,7 @@ surface_after_counts <- surface_after_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
     norm_factor <- 0.1 /  new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
-    counts <- get_area_counts(.x, norm_factor)
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
     tibble(
       Area = area_thresholds,
       Count = counts
@@ -329,21 +344,30 @@ surface_count_diff <- surface_after_counts %>%
             by = c("Trial", "Sample", "Area"), 
             suffix = c("_After", "_Before")) %>%
   mutate(Count_Diff = Count_After - Count_Before,
-         Positive_Diff = pmax(Count_Diff, 0))
+         Positive_Diff = pmax(Count_Diff$Count, 0))
+
+# Calculate cumulative counts
+cumulative_surface_counts <- surface_count_diff %>%
+  group_by(Trial, Sample) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum( Positive_Diff)) %>%
+  ungroup()
 
 # Calculate average counts by trial
-average_surface_counts <- surface_count_diff %>%
+average_surface_counts_cumulative <- cumulative_surface_counts %>%
   group_by(Trial, Area) %>%
   summarize(
-    Average_Count = mean(Positive_Diff, na.rm = TRUE),
+    Average_Count = mean(Cumulative_Count, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
          log_count = log10(Average_Count),
          log_count = ifelse(log_count < 0, 0, log_count))
 
+
+
 # Calculate best fit lines
-surface_best_fits <- average_surface_counts %>%
+surface_best_fits <- average_surface_counts_cumulative %>%
   group_by(Trial) %>%
   filter(Average_Count > 0) %>%
   mutate(log_area = log10(Area),
@@ -357,7 +381,7 @@ surface_best_fits <- average_surface_counts %>%
   mutate(PCL = 10^(-intercept/slope))
 
 # For cumulative data - calculate the overall average across all trials
-overall_average_surface <- average_surface_counts %>%
+overall_average_surface <- average_surface_counts_cumulative %>%
   group_by(log_area) %>%
   summarize(
     Average_Count = mean(log_count, na.rm = TRUE),
@@ -366,7 +390,7 @@ overall_average_surface <- average_surface_counts %>%
 
 # Modify the cumulative distribution plot
 ggplot() +
-  geom_line(data = average_surface_counts,
+  geom_line(data = average_surface_counts_cumulative,
             aes(x = log_area, y = log_count, 
                 color = factor(Trial))) +
   geom_line(data = overall_average_surface,
@@ -389,7 +413,7 @@ ggplot() +
 kable(surface_best_fits, 
       caption = "PCL and Slope Statistics for Surface Analysis")
 
-average_surface_binned <- average_surface_counts %>%
+average_surface_binned <- average_surface_counts_cumulative %>%
   group_by(Trial) %>%
   arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
   mutate(
@@ -440,24 +464,19 @@ ggplot() +
 new_edge_factors<- edge_summary_data %>%
   group_by(Sample, Trial) %>%
   summarise(
-    Total_Width = sum(width),
+    Total_Width = sum(width)* 1e-6,
     .groups = "drop"
   )
-
-max_width <- max(new_edge_factors$Total_Width)
-
-new_edge_factors <- new_edge_factors %>% 
-  mutate(Factors = max_width/Total_Width)
 
 # Calculate area-based counts for edge data
 edge_counts <- edge_particles_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
-    norm_factor <- new_edge_factors$Factors[new_edge_factors$Sample == .y$Sample & new_edge_factors$Trial == .y$Trial]
-    counts <- get_area_counts(.x, norm_factor)
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Sample == .y$Sample & new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
     tibble(
       Area = area_thresholds,
-      Count = counts
+      Count = counts$Count
     )
   })
 
@@ -577,20 +596,19 @@ ggplot() +
 
 ```
 
-## 4. Calibration Wafer Analysis
+## 4. Calibration Wafer Analysis - Edge
 
-```{r calibration_wafer_analysis}
+```{r calibration_wafer_analysis_edge}
 new_calibration_factors<- calibration_summary_data %>%
   group_by(Sample, Trial) %>%
   summarise(
-    Total_Width = sum(edge_width),
+    Total_Width = sum(edge_width) * 1e-6,
     .groups = "drop"
   )
 
-max_width <- max(new_edge_factors$Total_Width)
 
 new_calibration_factors <- new_calibration_factors %>%
-  mutate(Factors = max_width/Total_Width)
+  mutate(Factors = .1 /Total_Width)
 
 
 calibration_summary_data <- calibration_summary_data %>%
@@ -614,7 +632,7 @@ calibration_counts <- calibration_particles_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
     norm_factor <- new_calibration_factors$Factors[new_calibration_factors$Sample == .y$Sample & new_calibration_factors$Trial == .y$Trial]
-    counts <- get_area_counts(.x, norm_factor)
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
     tibble(
       Area = area_thresholds,
       Count = counts
@@ -632,7 +650,7 @@ cumulative_calibration_counts <- calibration_counts %>%
 average_calibration_counts <- cumulative_calibration_counts %>%
   group_by(Trial, Area) %>%
   summarize(
-    Average_Count = round(mean(Cumulative_Count, na.rm = TRUE)),
+    Average_Count = round(mean(Cumulative_Count$Count, na.rm = TRUE)),
     .groups = "drop"
   ) %>%
   mutate(Trial = Trial + 5) %>%  # Adjust trial numbers to match other analyses
@@ -750,58 +768,119 @@ new_sample_areas <- surface_before_data$summary_data %>%
 
 # New function to sum areas within thresholds
 
-get_area_sums <- function(data, normalization_factor) {
-  sapply(area_thresholds, function(x) {
-    sum(data$Area[data$Area > x], na.rm = TRUE) * normalization_factor
-  })
+get_area_sums <- function(data, area_thresholds, normalization_factor) {
+  # Initialize sums vector
+  areas <- numeric(length(area_thresholds))
+  counts <- numeric(length(area_thresholds))
+  
+  # For all bins except the last one
+  for(i in 1:(length(area_thresholds) - 1)) {
+    # Sum areas of particles that fall within this bin
+    bin_mask <- data$Area >= area_thresholds[i] & data$Area < area_thresholds[i + 1]
+    areas[i] <- sum(data$Area[bin_mask], na.rm = TRUE) * normalization_factor
+  }
+  
+  # Handle the last bin separately
+  last_bin_mask <- data$Area >= area_thresholds[length(area_thresholds)]
+  areas[length(area_thresholds)] <- sum(data$Area[last_bin_mask], na.rm = TRUE) * normalization_factor
+  
+  for(i in 1:(length(area_thresholds) - 1)) {
+    counts[i] <- sum(data$Area >= area_thresholds[i] & 
+                    data$Area < area_thresholds[i + 1]) * normalization_factor
+  }
+  
+  # For the last bin
+  counts[length(area_thresholds)] <- sum(data$Area >= area_thresholds[length(area_thresholds)]) * normalization_factor
+  
+  
+  tibble(
+    Area = area_thresholds,
+    Count = counts,
+    areas = areas
+  )
 }
 
 # Calculate model parameters using area summation
-surface_area <- surface_after_data$particle_data %>%
+surface_area_after <- surface_after_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
     norm_factor <- 0.1 / new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample & new_sample_areas$Trial == .y$Trial]
-    areas <- get_area_sums(.x, norm_factor)
+    areas <- get_area_sums(.x, area_thresholds, norm_factor)
     tibble(
       Area = area_thresholds,
-      Total_Area = areas
+      Total_Area = areas$areas,
+      Count = areas$Count,
+      norm_factor = norm_factor
     )
-  }) %>%
-  group_by(Trial, Area) %>%  # Group by both Trial and Area
-  summarize(
-    Average_Total_Area = mean(Total_Area, na.rm = TRUE),
-    .groups = "drop"
-  ) 
+  }) 
 
+surface_area_before <- surface_before_data$particle_data %>%
+  group_by(Trial, Sample) %>%
+  group_modify(~ {
+    norm_factor <- 0.1 / new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample & new_sample_areas$Trial == .y$Trial]
+    areas <- get_area_sums(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Total_Area = areas$areas,
+      Count = areas$Count
+    )
+  }) 
+
+surface_area_diff <- surface_area_after %>%
+  full_join(surface_area_before, 
+            by = c("Trial", "Sample", "Area"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Area_Diff = Total_Area_After - Total_Area_Before,
+         Positive_Diff_Count = pmax(Count_Diff, 0),
+         Positive_Diff_Area = pmax(Area_Diff, 0))
 
 
 
 # Calculate model parameters using area-based approach
-edge_model_data <- surface_area %>%
+edge_model_data <- surface_area_diff %>%
+  group_by(Trial, Sample, Area) %>%
   mutate(
-    Normalized_Area = (Average_Total_Area) / (.1 * 10^12),
-    Model_Count = (4 * Normalized_Area) / sqrt(pi * (2*(sqrt(Area/pi))))
+    # Calculate F = sum of particle areas / box area
+    F = (Positive_Diff_Area * 1e-12) / (.1),
+    
+    # Calculate D (diameter) from Area
+    D = (2 * sqrt(Area/pi))* 1e-6,
+    
+    # Calculate nl (number per unit length) = 4F/πD
+    nl = (4 * F) / (pi * D),
+    
+    # Calculate total particles on edge
+    Nedge = nl * .1
   ) %>%
-  group_by(Trial) %>%
-  arrange(desc(Area)) %>%
-  mutate(Cumulative_Count = cumsum(Model_Count)) %>%
   ungroup()
 
-# Normalize counts by maximum edge length
-edge_model_data <- edge_model_data %>%
-  mutate(
-    Normalized_Count = Model_Count * max_width,
-    Normalized_Cumulative_Count = round(Cumulative_Count * max_width)
+# Calculate cumulative counts
+cumulative_model_counts <- edge_model_data %>%
+  group_by(Trial, Sample) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum(Nedge)) %>%
+  ungroup()
+
+# Calculate average counts by trial
+average_model_counts_cumulative <- cumulative_model_counts %>%
+  group_by(Trial, Area) %>%
+  summarize(
+    Average_Count = mean(Cumulative_Count, na.rm = TRUE),
+    .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Normalized_Cumulative_Count),
-         Normalized_Cumulative_Count = ifelse(log_count < 0, 0, log_count))
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count))
 
-# Calculate best fit lines for the model
-model_best_fits <- edge_model_data %>%
+
+
+# Calculate best fit lines
+model_best_fits <- average_model_counts_cumulative %>%
   group_by(Trial) %>%
+  filter(Average_Count > 0) %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Normalized_Cumulative_Count),
+         log_count = log10(Average_Count),
          log_count = ifelse(log_count < 0, 0, log_count)) %>%
   summarise(
     slope = coef(lm(log_count ~ log_area))[2],
@@ -810,16 +889,18 @@ model_best_fits <- edge_model_data %>%
   ) %>%
   mutate(PCL = 10^(-intercept/slope))
 
-overall_average_model <- edge_model_data %>%
+# For cumulative data - calculate the overall average across all trials
+overall_average_model <- average_model_counts_cumulative %>%
   group_by(log_area) %>%
   summarize(
-    Average_Count = mean(Normalized_Cumulative_Count, na.rm = TRUE),
+    Average_Count = mean(log_count, na.rm = TRUE),
     .groups = "drop"
   )
 
+
 # Create edge model visualization
 ggplot() +
-  geom_line(data = edge_model_data,
+  geom_line(data = average_model_counts_cumulative,
             aes(x = log_area, y = log_count,
                 color = factor(Trial))) +
   geom_line(data = overall_average_model,
@@ -845,8 +926,7 @@ kable(model_best_fits %>%
       caption = "Edge Model Analysis Summary Statistics")
 
 
-average_model_binned <- edge_model_data %>%
-  mutate(Average_Count = 10^Normalized_Cumulative_Count) %>% 
+average_model_binned <- average_model_counts_cumulative %>%
   group_by(Trial) %>%
   arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
   mutate(
@@ -868,9 +948,6 @@ overall_average_model_binned <- average_model_binned %>%
     log_count = log10(Average_Count),
     log_count = ifelse(log_count < 0 | !is.finite(log_count), 0, log_count)
   )
-
-
-
 
 
 ggplot() +
@@ -907,7 +984,7 @@ ggplot() +
                 color = factor(Trial)), 
             linetype = line_types["Observed"]) +
   # Edge model
-  geom_line(data = edge_model_data,
+  geom_line(data = average_model_counts_cumulative,
             aes(x = log_area, y = log_count, 
                 color = factor(Trial)),
             linetype = line_types["Modeled"]) +
@@ -967,7 +1044,8 @@ comparison_all_models <- overall_average_cumulative %>%
     Ratio = 1/(2*(sqrt(10^(log_area)/pi))),
     Observed_by_Modeled = Observed_edge_counts/Modeled_edge_counts,
     Observed_by_Calibration = Observed_edge_counts/Observed_Calibration_counts,
-    Modeled_by_Calibration = Modeled_edge_counts/Observed_Calibration_counts
+    Modeled_by_Calibration = Modeled_edge_counts/Observed_Calibration_counts,
+    Calibration_by_Modeled = Observed_Calibration_counts/Modeled_edge_counts
   ) 
 
 #Ratio comparison plot
@@ -981,11 +1059,14 @@ ggplot() +
   geom_line(data = comparison_all_models,
             aes(x = log_area, y = Ratio),
             color = trial_colors["9"]) +
+  geom_line(data = comparison_all_models,
+            aes(x = log_area, y = Calibration_by_Modeled),
+            color = trial_colors["10"]) +
   labs(
     x = expression(log[10](Area)~"(microns)"),
     y = "Ratio",
     title = "Ratio of Particles per Experiment",
-    subtitle = "Comparison of measurement methods against theoretical ratio"
+    subtitle = "Red: Observed/Modeled, Blue: Observed/Calibration, Purple: Calibration/Modeled, n\ Green: Theoretical Ratio"
   ) +
   custom_theme
 
@@ -1058,32 +1139,40 @@ binned_ratios <- overall_average_binned %>%
     Ratio = 1/(2*(sqrt(10^(log_area)/pi))),
     Observed_by_Modeled = log_count_edge/log_count_model,
     Observed_by_Calibration = log_count_edge/log_count,
-    Modeled_by_Calibration = log_count_model/log_count
+    Modeled_by_Calibration = log_count_model/log_count,
+    Calibration_by_Modeled = log_count/log_count_model
   ) 
 
 # Create ratio plot for binned data
 ggplot() +
   geom_line(data = binned_ratios,
-            aes(x = log_area, y = Observed_by_Modeled),
+            aes(x = log_area, y = log10(Observed_by_Modeled)),
             color = trial_colors["6"]) +
   geom_line(data = binned_ratios,
-            aes(x = log_area, y = Observed_by_Calibration),
+            aes(x = log_area, y = log10(Observed_by_Calibration)),
             color = trial_colors["8"]) +
   geom_line(data = binned_ratios,
-            aes(x = log_area, y = Ratio),
+            aes(x = log_area, y = log10(Ratio)),
             color = trial_colors["9"]) +
+  geom_line(data = binned_ratios,
+            aes(x = log_area, y = log10(Calibration_by_Modeled)),
+            color = trial_colors["10"]) +
   labs(
     x = expression(log[10](Area)~"(microns)"),
     y = "Ratio",
     title = "Ratio of Binned Particles per Experiment",
-    subtitle = "Red: Observed/Modeled, Blue: Observed/Calibration, Green: Theoretical Ratio"
+    subtitle = "Red: Observed/Modeled, Blue: Observed/Calibration, Purple: Calibration/Modeled, n\ Green: Theoretical Ratio"
   ) +
   custom_theme
 
 
 ```
 
-```{r}
+
+## 7. Paper Comparisons
+
+
+```{r comparison graphs}
 # Calculate surface binned fit
 surface_binned_fit <- overall_average_surface_binned %>%
   summarise(
@@ -1259,7 +1348,7 @@ p3
 p4
 ```
 
-```{r}
+```{r combined comparison}
 
 create_image_grob <- function(img_path) {
   img <- readPNG(img_path)
@@ -1303,161 +1392,3 @@ grid.arrange(
 )
 
 ```
-
-## 7. Statistical Analysis of Trial Differences
-
-```{r trial_statistics}
-# Calculate basic statistics for trials
-trial_statistics <- bind_rows(
-  surface_best_fits %>% 
-    mutate(data_type = "Surface"),
-  edge_best_fits %>% 
-    mutate(data_type = "Edge"),
-  calibration_best_fits %>% 
-    mutate(data_type = "Calibration"),
-  model_best_fits %>% 
-    mutate(data_type = "Model")
-)
-
-# Create summary statistics table
-trial_summary <- trial_statistics %>%
-  group_by(data_type) %>%
-  summarize(
-    Mean_PCL = mean(PCL),
-    SD_PCL = sd(PCL),
-    CV_PCL = SD_PCL / Mean_PCL * 100,
-    Mean_Slope = mean(slope),
-    SD_Slope = sd(slope),
-    CV_Slope = SD_Slope / Mean_Slope * 100
-  )
-
-# Display summary statistics
-kable(trial_summary, 
-      caption = "Summary Statistics by Data Type",
-      digits = c(0, 2, 2, 2, 3, 3, 2)) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"))
-
-# Perform ANOVA for PCL values
-pcl_anova <- aov(PCL ~ data_type, data = trial_statistics)
-slope_anova <- aov(slope ~ data_type, data = trial_statistics)
-
-# Create ANOVA results table
-anova_results <- bind_rows(
-  broom::tidy(pcl_anova) %>% mutate(parameter = "PCL"),
-  broom::tidy(slope_anova) %>% mutate(parameter = "Slope")
-)
-
-# Display ANOVA results
-kable(anova_results, 
-      caption = "ANOVA Results for PCL and Slope Differences",
-      digits = c(0, 0, 2, 2, 4)) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"))
-```
-
-### 7.1 Statistical Visualization of Trial Differences
-
-```{r trial_visualization}
-# Create box plots for PCL values
-ggplot(trial_statistics, aes(x = data_type, y = PCL, fill = data_type)) +
-  geom_boxplot() +
-  scale_fill_manual(values = trial_colors) +
-  labs(
-    x = "Data Type",
-    y = "PCL Value",
-    title = "Distribution of PCL Values by Data Type"
-  ) +
-  custom_theme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-# Create box plots for slope values
-ggplot(trial_statistics, aes(x = data_type, y = slope, fill = data_type)) +
-  geom_boxplot() +
-  scale_fill_manual(values = trial_colors) +
-  labs(
-    x = "Data Type",
-    y = "Slope Value",
-    title = "Distribution of Slope Values by Data Type"
-  ) +
-  custom_theme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-
-### 7.2 Trial Similarity Analysis
-
-```{r trial_similarity}
-# Calculate pairwise correlations between trials for each data type
-trial_correlations <- trial_statistics %>%
-  group_by(data_type) %>%
-  summarize(
-    PCL_correlation = cor.test(PCL, Trial)$estimate,
-    PCL_p_value = cor.test(PCL, Trial)$p.value,
-    Slope_correlation = cor.test(slope, Trial)$estimate,
-    Slope_p_value = cor.test(slope, Trial)$p.value
-  )
-
-# Display correlation results
-kable(trial_correlations,
-      caption = "Trial Correlation Analysis Results",
-      digits = c(NA, 3, 4, 3, 4)) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"))
-
-# Create correlation matrix heatmap
-correlation_matrix <- cor(
-  trial_statistics %>%
-    select(Trial, PCL, slope, data_type) %>%
-    pivot_wider(names_from = data_type, 
-                values_from = c(PCL, slope))
-)
-
-ggplot(data = reshape2::melt(correlation_matrix)) +
-  geom_tile(aes(x = Var1, y = Var2, fill = value)) +
-  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
-                      midpoint = 0, limit = c(-1,1)) +
-  labs(
-    x = "",
-    y = "",
-    title = "Correlation Matrix of Trial Measurements"
-  ) +
-  custom_theme +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-
-### 7.3 Trial-to-Trial Analysis Findings
-
-Based on the statistical comparison of trials 8-11:
-
-1. Surface Distribution Analysis:
-   * Trial 8 shows moderate PCL values (PCL = `r round(filter(surface_best_fits, Trial == 8)$PCL, 1)`) with slope of `r round(filter(surface_best_fits, Trial == 8)$slope, 3)`
-   * Trial 9 demonstrates decreased PCL (PCL = `r round(filter(surface_best_fits, Trial == 9)$PCL, 1)`) and steeper slope (`r round(filter(surface_best_fits, Trial == 9)$slope, 3)`)
-   * Trial 10 shows lowest PCL values (PCL = `r round(filter(surface_best_fits, Trial == 10)$PCL, 1)`) with steepest slope (`r round(filter(surface_best_fits, Trial == 10)$slope, 3)`)
-   * Trial 11 exhibits highest PCL (PCL = `r round(filter(surface_best_fits, Trial == 11)$PCL, 1)`) but moderate slope (`r round(filter(surface_best_fits, Trial == 11)$slope, 3)`)
-   * ANOVA testing suggests trial differences are not statistically significant (p > 0.05)
-
-2. Edge Measurement Consistency:
-   * Trial 8: PCL = `r round(filter(edge_best_fits, Trial == 8)$PCL, 1)`, slope = `r round(filter(edge_best_fits, Trial == 8)$slope, 3)`
-   * Trial 9: PCL = `r round(filter(edge_best_fits, Trial == 9)$PCL, 1)`, slope = `r round(filter(edge_best_fits, Trial == 9)$slope, 3)`
-   * Trial 10: PCL = `r round(filter(edge_best_fits, Trial == 10)$PCL, 1)`, slope = `r round(filter(edge_best_fits, Trial == 10)$slope, 3)`
-   * Trial 11: PCL = `r round(filter(edge_best_fits, Trial == 11)$PCL, 1)`, slope = `r round(filter(edge_best_fits, Trial == 11)$slope, 3)`
-   * Coefficient of variation between trials: `r round(sd(edge_best_fits$PCL)/mean(edge_best_fits$PCL)*100, 1)`% for PCL values
-
-3. Trial Stability Analysis:
-   * Sequential trial correlation is strong (r > 0.5 between consecutive trials)
-   * No systematic drift observed across trial sequence
-   * Slope values maintain consistency across trials with standard deviation of `r round(sd(edge_best_fits$slope), 3)`
-   * Model predictions show good agreement between trials (CV = `r round(sd(model_best_fits$PCL)/mean(model_best_fits$PCL)*100, 1)`%)
-
-4. Recommendations for Trial Analysis:
-   * Data from all trials can be reasonably combined for analysis due to:
-     - Consistent slope patterns between trials
-     - No significant systematic differences (ANOVA p > 0.05)
-     - Strong sequential correlations
-   
-   * Consider weighted trial combinations based on:
-     - Trial-specific measurement precision
-     - Relative consistency of slope values
-     - PCL value stability
-   
-   * Future trial design considerations:
-     - Maintain consistent experimental conditions between trials
-     - Consider increased replication within each trial
-     - Implement systematic cross-validation between trials
