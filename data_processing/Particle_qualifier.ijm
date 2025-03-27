@@ -125,23 +125,28 @@ function qualifyEdgeParticles(folder) {
     heightIndex = -1;
     widthIndex = -1;
     sliceIndex = -1;
+    isQualifiedIndex = -1;
+    
     for (i = 0; i < particleHeaders.length; i++) {
         if (particleHeaders[i] == "BX") bxIndex = i;
         if (particleHeaders[i] == "BY") byIndex = i;
         if (particleHeaders[i] == "Height") heightIndex = i;
         if (particleHeaders[i] == "Width") widthIndex = i;
         if (particleHeaders[i] == "Slice") sliceIndex = i;
+        if (particleHeaders[i] == "IsQualified") isQualifiedIndex = i;
     }
 
     // Verify required columns exist
-    if (bxIndex == -1 || byIndex == -1 || heightIndex == -1 || widthIndex == -1 || sliceIndex == -1) {
+    if (bxIndex == -1 || byIndex == -1 || heightIndex == -1 || widthIndex == -1) {
         print("Required columns not found in particles file");
         return;
     }
 
     // Add IsQualified column if it doesn't exist
-    if (indexOf(particleLines[0], "IsQualified") == -1) {
-        particleLines[0] = particleLines[0] + ",IsQualified";
+    if (isQualifiedIndex == -1) {
+        particleHeaders = Array.concat(particleHeaders, "IsQualified");
+        isQualifiedIndex = particleHeaders.length - 1;
+        particleLines[0] = String.join(particleHeaders, ",");
     }
 
     // Load edge coordinates for each slice
@@ -150,11 +155,13 @@ function qualifyEdgeParticles(folder) {
     
     // Get valid slices from particle data
     validSlices = newArray(1000);
-    for (i = 1; i < particleLines.length; i++) {
-        particleData = split(particleLines[i], ",");
-        if (particleData.length > sliceIndex) {
-            slice = parseInt(particleData[sliceIndex]);
-            validSlices[slice] = true;
+    if (sliceIndex != -1) {
+        for (i = 1; i < particleLines.length; i++) {
+            particleData = split(particleLines[i], ",");
+            if (particleData.length > sliceIndex) {
+                slice = parseInt(particleData[sliceIndex]);
+                validSlices[slice] = true;
+            }
         }
     }
     
@@ -162,7 +169,7 @@ function qualifyEdgeParticles(folder) {
     for (i = 0; i < edgeFiles.length; i++) {
         if (endsWith(edgeFiles[i], ".csv")) {
             sliceNum = extractSliceNumber(edgeFiles[i]);
-            if (sliceNum == -1 || !validSlices[sliceNum]) continue;
+            if (sliceNum == -1 || (sliceIndex != -1 && !validSlices[sliceNum])) continue;
             
             edgeData = split(File.openAsString(edgeCoordDir + edgeFiles[i]), "\n");
             if (edgeData.length < 2) continue;
@@ -186,19 +193,32 @@ function qualifyEdgeParticles(folder) {
     
     for (i = 1; i < particleLines.length; i++) {
         particleData = split(particleLines[i], ",");
-        if (particleData.length <= maxOf(maxOf(bxIndex, byIndex), maxOf(heightIndex, sliceIndex))) {
+        
+        // Ensure particle data has enough elements for all columns
+        while (particleData.length < particleHeaders.length) {
+            particleData = Array.concat(particleData, "");
+        }
+        
+        if (particleData.length <= maxOf(bxIndex, byIndex) || 
+            particleData.length <= maxOf(heightIndex, widthIndex)) {
+            newParticleLines[i] = particleLines[i];
             continue;
         }
 
         // Get particle data
-        slice = parseInt(particleData[sliceIndex]);
         bx = parseFloat(particleData[bxIndex]);
         by = parseFloat(particleData[byIndex]);
         height = parseFloat(particleData[heightIndex]);
         width = parseFloat(particleData[widthIndex]);
         
+        // Get slice number from data if available
+        slice = -1;
+        if (sliceIndex != -1 && particleData.length > sliceIndex) {
+            slice = parseInt(particleData[sliceIndex]);
+        }
+        
         // Apply dimension differences if available for this slice
-        if (dimensionDiffs[slice] != "") {
+        if (slice != -1 && dimensionDiffs[slice] != "") {
             diffs = split(dimensionDiffs[slice], ",");
             if (diffs.length >= 2) {
                 widthDiff = parseFloat(diffs[0]);
@@ -216,46 +236,37 @@ function qualifyEdgeParticles(folder) {
 
         isQualified = false;
 
-        // Skip if no edge data for this slice
-        if (edgeCoords[slice] == "") {
-            if (endsWith(particleLines[i], ",")) {
-                newParticleLines[i] = particleLines[i] + "false";
-            } else {
-                newParticleLines[i] = particleLines[i] + ",false";
-            }
-            continue;
-        }
-
-        // Check qualification against edge coordinates
-        edgePoints = split(edgeCoords[slice], ";");
-        for (p = 0; p < edgePoints.length; p++) {
-            if (edgePoints[p] == "") continue;
-            
-            coords = split(edgePoints[p], ",");
-            if (coords.length < 2) continue;
-            
-            edgeX = parseFloat(coords[0]);
-            edgeY = parseFloat(coords[1]);
-            
-            if (edgeX >= particleLeft && edgeX <= particleRight) {
-                if ((particleTop + 2) >= edgeY) {
-                    isQualified = true;
-                    break;
+        // Check qualification against edge coordinates if slice is valid
+        if (slice != -1 && edgeCoords[slice] != "") {
+            edgePoints = split(edgeCoords[slice], ";");
+            for (p = 0; p < edgePoints.length; p++) {
+                if (edgePoints[p] == "") continue;
+                
+                coords = split(edgePoints[p], ",");
+                if (coords.length < 2) continue;
+                
+                edgeX = parseFloat(coords[0]);
+                edgeY = parseFloat(coords[1]);
+                
+                if (edgeX >= particleLeft && edgeX <= particleRight) {
+                    if ((particleTop + 2) >= edgeY) {
+                        isQualified = true;
+                        break;
+                    }
                 }
             }
         }
 
-        // Update particle line with qualification status
-        if (endsWith(particleLines[i], ",")) {
-            newParticleLines[i] = particleLines[i] + isQualified;
-        } else {
-            newParticleLines[i] = particleLines[i] + "," + isQualified;
-        }
+        // Update particle data with qualification status
+        particleData[isQualifiedIndex] = "" + isQualified;
+        
+        // Join particle data back into line
+        newParticleLines[i] = String.join(particleData, ",");
     }
 
     // Save updated particles file
     File.saveString(String.join(newParticleLines, "\n"), particlesFile);
-    print("Processed sample " + sampleNumber + ": Added qualification status with dimension adjustments");
+    print("Processed sample " + sampleNumber + ": Updated qualification status with dimension adjustments");
 }
 
 function extractSliceNumber(filename) {
@@ -278,8 +289,8 @@ function mapParticlesToSlices(folder) {
     sampleNumber = substring(folderName, 4, indexOf(folderName, " minus"));
     
     // Get paths to required files
-    particlesFile = folder + "Particles_Reanalysis_Bef_" + sampleNumber + " minus Aft_" + sampleNumber + ".csv";
-    summaryFile = folder + "Summary_Reanalysis_Bef_" + sampleNumber + " minus Aft_" + sampleNumber + "_updated.csv";
+    particlesFile = folder + "Particles Bef_" + sampleNumber + " minus Aft_" + sampleNumber + ".csv";
+    summaryFile = folder + "Summary Bef_" + sampleNumber + " minus Aft_" + sampleNumber + "_updated.csv";
     
     // Verify files exist
     if (!File.exists(particlesFile) || !File.exists(summaryFile)) {
@@ -295,6 +306,20 @@ function mapParticlesToSlices(folder) {
     if (particleLines.length < 2 || summaryLines.length < 2) {
         print("Invalid file format for sample " + sampleNumber);
         return;
+    }
+
+    // Get header indices for particles file
+    particleHeaders = split(particleLines[0], ",");
+    sliceIndex = -1;
+    for (i = 0; i < particleHeaders.length; i++) {
+        if (particleHeaders[i] == "Slice") sliceIndex = i;
+    }
+
+    // If Slice column doesn't exist, add it
+    if (sliceIndex == -1) {
+        particleHeaders = Array.concat(particleHeaders, "Slice");
+        sliceIndex = particleHeaders.length - 1;
+        particleLines[0] = String.join(particleHeaders, ",");
     }
 
     // Get Count and Slice columns from summary file
@@ -345,16 +370,9 @@ function mapParticlesToSlices(folder) {
         if (sliceNum > maxValidSlice) maxValidSlice = sliceNum;
     }
 
-    // Add Slice column if it doesn't exist
-    if (indexOf(particleLines[0], "Slice") == -1) {
-        particleLines[0] = particleLines[0] + ",Slice";
-    }
-
     // Process each particle
     newParticleLines = newArray(particleLines.length);
     newParticleLines[0] = particleLines[0];
-    
-   // Continuing mapParticlesToSlices function where it left off...
     
     for (i = 1; i < particleLines.length; i++) {
         sliceNumber = -1;
@@ -368,24 +386,27 @@ function mapParticlesToSlices(folder) {
             }
         }
 
-        // Add slice number to particle data
+        // Get particle data and update slice
+        particleData = split(particleLines[i], ",");
+        
+        // Ensure particle data has enough elements for all columns
+        while (particleData.length < particleHeaders.length) {
+            particleData = Array.concat(particleData, "");
+        }
+        
+        // Update slice number
         if (sliceNumber == -1) {
             print("Warning: Could not assign slice number to particle " + i);
-            if (endsWith(particleLines[i], ",")) {
-                newParticleLines[i] = particleLines[i] + "0";
-            } else {
-                newParticleLines[i] = particleLines[i] + ",0";
-            }
+            particleData[sliceIndex] = "0";
         } else {
-            if (endsWith(particleLines[i], ",")) {
-                newParticleLines[i] = particleLines[i] + sliceNumber;
-            } else {
-                newParticleLines[i] = particleLines[i] + "," + sliceNumber;
-            }
+            particleData[sliceIndex] = "" + sliceNumber;
         }
+        
+        // Join particle data back into line
+        newParticleLines[i] = String.join(particleData, ",");
     }
 
     // Save updated particles file
     File.saveString(String.join(newParticleLines, "\n"), particlesFile);
-    print("Processed sample " + sampleNumber + ": Added slice numbers to particles");
+    print("Processed sample " + sampleNumber + ": Updated slice numbers for particles");
 }

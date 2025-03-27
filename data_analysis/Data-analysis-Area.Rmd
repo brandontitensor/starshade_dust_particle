@@ -2,7 +2,11 @@
 title: "Area_based_analysis"
 author: "Brandon Titensor"
 date: "2025-01-08"
-output: pdf_document
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
 ---
 
 ```{r setup, include=FALSE}
@@ -23,7 +27,7 @@ library(png)
 library(kableExtra)
 library(broom)
 
-# Create unified theme
+# Create unified theme for consistent plot appearance across the analysis
 custom_theme <- theme_minimal() +
   theme(
     plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
@@ -37,17 +41,16 @@ custom_theme <- theme_minimal() +
     panel.grid.minor = element_line(color = "gray95")
   )
 
-# Define consistent color palette
+# Define consistent color palette for different trials
 trial_colors <- c(
-  "6" = "#E41A1C",  # red
-  "7" = "#FF7F00",  # orange
-  "8" = "#377EB8",  # blue
-  "9" = "#4DAF4A",  # green
-  "10" = "#984EA3", # purple
-  "11" = "#CEB180"  # tan
+  "8" = "#1f77b4",  # blue
+  "9" = "#ff7f0e",  # orange
+  "10" = "#2ca02c",  # green
+  "11" = "#d62728",  # red
+  "12" = "#9467bd" # purple
 )
 
-# Define consistent line types
+# Define consistent line types for different data categories
 line_types <- c(
   "Observed" = "solid",
   "Modeled" = "dashed",
@@ -60,9 +63,11 @@ line_types <- c(
 ## 1. Data Loading and Preprocessing
 
 ### 1.1 Edge Data
+<!-- This section loads particle data from the edges of samples to analyze particulate contamination -->
 
 ```{r load_edge_data}
 # Function to load and process a single sample of edge data
+# This reads both particle details and summary information from CSV files
 load_sample_data <- function(sample_number) {
   # Format sample number with leading zeros
   sample_str <- sprintf("%02d", sample_number)
@@ -86,39 +91,41 @@ load_sample_data <- function(sample_number) {
   summary_data <- summary_data %>% drop_na()
   summary_data$Sample <- sample_number
   
-  # Convert width from pixels to microns
+  # Convert width from pixels to microns (calibration factor is 50/240)
   summary_data$width <- summary_data$width * (50/240)
   
   list(particles = particles_data, summary = summary_data)
 }
 
-# Load data for samples 36-50 (Trials 6-10, 5 samples each)
-edge_data <- map(c(36:55), load_sample_data)
+# Load data for samples 51-60 (Trials 9-12, 5 samples each)
+edge_data <- map(c(01:20), load_sample_data)
 
-# Combine all particle data
+# Combine all particle data into one dataset
 edge_particles_data <- bind_rows(map(edge_data, "particles"))
 
-# Combine all summary data
+# Combine all summary data into one dataset
 edge_summary_data <- bind_rows(map(edge_data, "summary"))
 
 # Assign trials to samples (5 samples per trial)
 edge_particles_data$Trial <- ceiling((edge_particles_data$Sample - 5) / 5) + 1
 edge_summary_data$Trial <- ceiling((edge_summary_data$Sample - 5) / 5) + 1
 
-# Calculate total width for each trial
+# Calculate total width for each trial to normalize data
 total_width_by_trial <- edge_summary_data %>%
   group_by(Trial) %>%
   summarise(Total_Width = sum(width))
 
-# Calculate the normalization factor
+# Calculate the normalization factor based on the maximum width
 max_width <- max(total_width_by_trial$Total_Width)
 normalization_factors <- max_width / total_width_by_trial$Total_Width
 ```
 
 ### 1.2 Surface Data
+<!-- This section loads data from the surfaces of samples before and after contamination -->
 
 ```{r load_surface_data}
 # Function to load and process surface data
+# This handles both before and after contamination measurements
 load_data <- function(condition) {
   # Function to load and process particle data for a single sample
   load_particle_data <- function(trial_number, sample_number, cond) {
@@ -139,7 +146,7 @@ load_data <- function(condition) {
     })
   }
 
-  # Load and process summary data
+  # Load and process summary data with error handling
   load_summary_data <- function(trial_number, sample_number, cond) {
     tryCatch({
       summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Summary_%sTr%dSa%dSurf.csv", 
@@ -163,10 +170,160 @@ load_data <- function(condition) {
     })
   }
 
-  # Load data for trials 8-11
-  surface_particle_data <- map2(rep(8:11, each = 5), rep(1:5, times = 4), 
+  # Load data for trials 8-12 (5 samples per trial)
+  surface_particle_data <- map2(rep(9:12, each = 5), rep(1:5, times = 4), 
                               ~load_particle_data(.x, .y, condition))
-  surface_summary_data <- map2(rep(8:11, each = 5), rep(1:5, times = 4), 
+  surface_summary_data <- map2(rep(9:12, each = 5), rep(1:5, times = 4), 
+                             ~load_summary_data(.x, .y, condition))
+
+  # Combine all data
+  surface_particle_data <- bind_rows(surface_particle_data)
+  surface_summary_data <- bind_rows(surface_summary_data)
+
+  # Add cleaning method information based on trial number
+  add_cleaning_method <- function(data) {
+    data %>%
+      mutate(Cleaning_Method = case_when(
+        Trial %in% c(2, 3) ~ "IPA rinse",
+        Trial %in% c(4, 5) ~ "Drag and wipe",
+        Trial %in% c(6, 7) ~ "First contact",
+        Trial %in% c(8, 9, 10, 11, 12) ~ "First contact & Drag and wipe",
+        TRUE ~ NA_character_
+      ))
+  }
+
+  surface_particle_data <- add_cleaning_method(surface_particle_data)
+  surface_summary_data <- add_cleaning_method(surface_summary_data)
+
+  # Calculate imaged areas to normalize counts (600 x 450 microns per image)
+  image_size <- 600 * 450 # microns^2
+  trial_areas <- surface_summary_data %>%
+    group_by(Trial, Cleaning_Method) %>%
+    summarise(
+      Total_Images = n(),
+      Total_Area = Total_Images * image_size * 1e-12, # Convert to m^2
+      .groups = "drop"
+    )
+
+  list(particle_data = surface_particle_data, 
+       summary_data = surface_summary_data, 
+       trial_areas = trial_areas)
+}
+
+# Load before and after surface data for comparison
+surface_before_data <- load_data("Bef")
+surface_after_data <- load_data("Aft")
+```
+
+### 1.3 Calibration Wafer Data
+<!-- This section loads data from calibration wafers which serve as reference standards -->
+
+```{r load_calibration_data}
+# Function to load and process calibration wafer data
+load_calibration_data <- function(sample_number) {
+  # Format sample number with leading zeros
+  sample_str <- sprintf("%02d", sample_number)
+  
+  # Construct file paths
+  particles_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
+  summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
+  
+  # Load particle data
+  particles_data <- read.csv(particles_path)
+  particles_data$Sample <- sample_number
+  
+  # Load summary data and clean up formatting
+  summary_data <- read.csv(summary_path)
+  names(summary_data) <- make.names(names(summary_data))
+  summary_data$Count <- as.numeric(gsub("[^0-9.]", "", summary_data$Count))
+  summary_data$width <- as.numeric(gsub("[^0-9.]", "", summary_data$width))
+  summary_data$Sample <- sample_number
+  summary_data <- summary_data %>% drop_na()
+  
+  list(particles = particles_data, summary = summary_data)
+}
+
+# Load data for calibration samples (11-30)
+calibration_data <- map(c(16:35), load_calibration_data)
+
+# Combine all particle data
+calibration_particles_data <- bind_rows(map(calibration_data, "particles"))
+
+# Combine all summary data
+calibration_summary_data <- bind_rows(map(calibration_data, "summary"))
+
+# Assign trials to samples
+calibration_particles_data$Trial <- ceiling((calibration_particles_data$Sample - 5) / 5) + 1
+calibration_summary_data$Trial <- ceiling((calibration_summary_data$Sample - 5) / 5) + 1
+
+# Calculate total width and normalization factors
+total_width_by_trial <- calibration_summary_data %>%
+  group_by(Trial) %>%
+  summarise(Total_Width = sum(edge_width))
+
+# Use same max_width as edge data for consistent normalization
+calibration_max_width <- max_width
+calibration_normalization_factors <- calibration_max_width / total_width_by_trial$Total_Width
+
+# Free memory by removing the raw data
+rm(calibration_data)
+```
+
+
+### 1.4 Calibration Surface Data
+<!-- This section loads surface data from calibration wafers for complete comparison -->
+
+```{r load_cal_surface_data}
+# Function to load and process surface data from calibration wafers
+# This is similar to the regular surface data function but with different file paths
+load_data <- function(condition) {
+  # Function to load and process particle data for a single sample
+  load_particle_data <- function(trial_number, sample_number, cond) {
+    tryCatch({
+      particle_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Cal_Surfaces/%sTr%dSa%dCwSurf/Particles_%sTr%dSa%dCwSurf.csv", 
+                             cond, trial_number, sample_number, cond, trial_number, sample_number)
+      
+      particle_data <- read_csv(particle_path)
+      particle_data <- particle_data[, 2:(ncol(particle_data)-2)]
+      particle_data$Sample <- sample_number
+      particle_data$Trial <- trial_number
+      
+      return(particle_data)
+    }, error = function(e) {
+      message(sprintf("Error loading particle data for %s Trial %d, Sample %d: %s", 
+                     cond, trial_number, sample_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Load and process summary data
+  load_summary_data <- function(trial_number, sample_number, cond) {
+    tryCatch({
+      summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Cal_Surfaces/%sTr%dSa%dCwSurf/Summary_%sTr%dSa%dCwSurf.csv", 
+                            cond, trial_number, sample_number, cond, trial_number, sample_number)
+      
+      summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
+      names(summary_data) <- make.names(names(summary_data))
+      summary_data <- summary_data %>% 
+        drop_na() %>%
+        mutate(
+          Sample = sample_number,
+          Trial = trial_number,
+          Slice_Number = as.integer(substr(Slice, nchar(Slice)-6, nchar(Slice)-4))
+        )
+      
+      return(summary_data)
+    }, error = function(e) {
+      message(sprintf("Error loading summary data for %s Trial %d, Sample %d: %s", 
+                     cond, trial_number, sample_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Load data for trial 12 (5 samples)
+  surface_particle_data <- map2(rep(12, each = 5), rep(1:5, times = 1), 
+                              ~load_particle_data(.x, .y, condition))
+  surface_summary_data <- map2(rep(12, each = 5), rep(1:5, times = 1), 
                              ~load_summary_data(.x, .y, condition))
 
   # Combine all data
@@ -180,7 +337,7 @@ load_data <- function(condition) {
         Trial %in% c(2, 3) ~ "IPA rinse",
         Trial %in% c(4, 5) ~ "Drag and wipe",
         Trial %in% c(6, 7) ~ "First contact",
-        Trial %in% c(8, 9, 10, 11) ~ "First contact & Drag and wipe",
+        Trial %in% c(8, 9, 10, 11, 12) ~ "First contact & Drag and wipe",
         TRUE ~ NA_character_
       ))
   }
@@ -203,84 +360,127 @@ load_data <- function(condition) {
        trial_areas = trial_areas)
 }
 
-# Load before and after surface data
-surface_before_data <- load_data("Bef")
-surface_after_data <- load_data("Aft")
+# Load before and after calibration surface data
+Cwsurface_before_data <- load_data("Bef")
+Cwsurface_after_data <- load_data("Aft")
 ```
 
-### 1.3 Calibration Wafer Data
+### 1.5 Witness Surface Data
+<!-- This section loads surface data from Witness sample for complete comparison -->
 
-```{r load_calibration_data}
-# Function to load and process calibration wafer data
-load_calibration_data <- function(sample_number) {
-  # Format sample number with leading zeros
-  sample_str <- sprintf("%02d", sample_number)
-  
-  # Construct file paths
-  particles_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Particles_Reanalysis_Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
-  summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Summary_Reanalysis_Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
-  
-  # Load particle data
-  particles_data <- read.csv(particles_path)
-  particles_data$Sample <- sample_number
-  
-  # Load summary data
-  summary_data <- read.csv(summary_path)
-  names(summary_data) <- make.names(names(summary_data))
-  summary_data$Count <- as.numeric(gsub("[^0-9.]", "", summary_data$Count))
-  summary_data$width <- as.numeric(gsub("[^0-9.]", "", summary_data$width))
-  summary_data$Sample <- sample_number
-  summary_data <- summary_data %>% drop_na()
-  
-  list(particles = particles_data, summary = summary_data)
+```{r load_wit_surface_data}
+# Function to load and process surface data from calibration wafers
+# This is similar to the regular surface data function but with different file paths
+load_data <- function(condition) {
+  # Function to load and process particle data for a single sample
+  load_particle_data <- function(trial_number, cond) {
+    tryCatch({
+      particle_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Witness/Witness_%s_%d/Particles_Witness_%s_%d.csv", 
+                             cond, trial_number, cond, trial_number)
+      
+      particle_data <- read_csv(particle_path)
+      particle_data <- particle_data[, 2:(ncol(particle_data)-2)]
+      particle_data$Trial <- trial_number
+      
+      return(particle_data)
+    }, error = function(e) {
+      message(sprintf("Error loading particle data for %s Trial %d", 
+                     cond, trial_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Load and process summary data
+  load_summary_data <- function(trial_number, cond) {
+    tryCatch({
+      summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Witness/Witness_%s_%d/Summary_Witness_%s_%d.csv", 
+                            cond, trial_number, cond, trial_number)
+      
+      summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
+      names(summary_data) <- make.names(names(summary_data))
+      summary_data <- summary_data %>% 
+        drop_na() %>%
+        mutate(
+          Trial = trial_number,
+          Slice_Number = as.integer(substr(Slice, nchar(Slice)-6, nchar(Slice)-4))
+        )
+      
+      return(summary_data)
+    }, error = function(e) {
+      message(sprintf("Error loading summary data for %s Trial %d", 
+                     cond, trial_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Load data for trial 12 (5 samples)
+  surface_particle_data <- map2(rep(9:12, each = 1), rep(1, times = 4), 
+                              ~load_particle_data(.x, condition))
+  surface_summary_data <- map2(rep(9:12, each = 1), rep(1, times = 4), 
+                             ~load_summary_data(.x, condition))
+
+  # Combine all data
+  surface_particle_data <- bind_rows(surface_particle_data)
+  surface_summary_data <- bind_rows(surface_summary_data)
+
+  # Add cleaning method information
+  add_cleaning_method <- function(data) {
+    data %>%
+      mutate(Cleaning_Method = case_when(
+        Trial %in% c(2, 3) ~ "IPA rinse",
+        Trial %in% c(4, 5) ~ "Drag and wipe",
+        Trial %in% c(6, 7) ~ "First contact",
+        Trial %in% c(8, 9, 10, 11, 12) ~ "First contact & Drag and wipe",
+        TRUE ~ NA_character_
+      ))
+  }
+
+  surface_particle_data <- add_cleaning_method(surface_particle_data)
+  surface_summary_data <- add_cleaning_method(surface_summary_data)
+
+  # Calculate imaged areas
+  image_size <- 600 * 450 # microns^2
+  trial_areas <- surface_summary_data %>%
+    group_by(Trial, Cleaning_Method) %>%
+    summarise(
+      Total_Images = n(),
+      Total_Area = Total_Images * image_size * 1e-12, # Convert to m^2
+      .groups = "drop"
+    )
+
+  list(particle_data = surface_particle_data, 
+       summary_data = surface_summary_data, 
+       trial_areas = trial_areas)
 }
 
-# Load data for calibration samples (11-25)
-calibration_data <- map(c(11:30), load_calibration_data)
-
-# Combine all particle data
-calibration_particles_data <- bind_rows(map(calibration_data, "particles"))
-
-# Combine all summary data
-calibration_summary_data <- bind_rows(map(calibration_data, "summary"))
-
-# Assign trials to samples
-calibration_particles_data$Trial <- ceiling((calibration_particles_data$Sample - 5) / 5) + 1
-calibration_summary_data$Trial <- ceiling((calibration_summary_data$Sample - 5) / 5) + 1
-
-# Calculate total width and normalization factors
-total_width_by_trial <- calibration_summary_data %>%
-  group_by(Trial) %>%
-  summarise(Total_Width = sum(edge_width))
-
-calibration_max_width <- max_width
-calibration_normalization_factors <- calibration_max_width / total_width_by_trial$Total_Width
-
-rm(calibration_data)
+# Load before and after calibration surface data
+Witsurface_before_data <- load_data("bef")
+Witsurface_after_data <- load_data("aft")
 ```
 
 ## 2. Surface Area Distribution Analysis
+<!-- This section analyzes the particle size distribution on the sample surfaces -->
 
 ```{r surface_area_distribution_analysis}
+# Filter surface particles by minimum area (1 )
 surface_before_particles <- surface_before_data$particle_data %>%
   filter(Area > 1)
 surface_after_particles <- surface_after_data$particle_data %>%
   filter(Area > 1)
 combined_surface_data <- bind_rows(surface_before_particles,surface_after_particles)
 
-# Create diameter thresholds
+# Create logarithmically spaced area thresholds from minimum to maximum particle size
 min_area <- 1  # Starting from 1 as per previous filter
 max_area <- max(combined_surface_data$Area)
 log_min <- log10(min_area)
 log_max <- log10(max_area)
 
-# Create 100 evenly spaced points on log scale
-area_thresholds <- 10^(seq(log_min, log_max, length.out = 250))
+# Create 250 evenly spaced points on log scale for binning particles
+area_thresholds <- 10^(seq(log_min, log_max, length.out = 100))
 
-#area_thresholds <- seq(1, max(combined_surface_data$Area), by = 10)
-
-# Define IEST standard parameters and calculate sample areas
-slope <- -0.926
+# Define IEST standard parameters (Industry standard for contamination control)
+# and calculate sample areas for normalization
+slope <- -0.926  # Standard IEST slope
 image_size <- 600 * 450 
 new_sample_areas <- surface_before_data$summary_data %>%
   group_by(Sample, Trial, Cleaning_Method) %>%
@@ -291,8 +491,8 @@ new_sample_areas <- surface_before_data$summary_data %>%
   )
 
 
-# Function to get area-based counts
-
+# Function to get area-based counts - counts particles that exceed each threshold
+# and applies normalization factor to standardize to 0.1 m²
 get_area_counts <- function(data, area_thresholds, normalization_factor) {
   # Initialize counts vector
   counts <- numeric(length(area_thresholds))
@@ -316,7 +516,8 @@ get_area_counts <- function(data, area_thresholds, normalization_factor) {
 
 
 # Calculate area-based counts for before and after data
-surface_before_counts <- surface_before_data$particle_data %>%
+# Normalizes each sample to 0.1 m² for standardized comparison
+surface_before_counts <- surface_before_particles %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
     norm_factor <- 0.1 /  new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
@@ -338,7 +539,8 @@ surface_after_counts <- surface_after_data$particle_data %>%
     )
   })
 
-# Calculate differences and averages
+# Calculate differences (after - before) to get contamination effect
+# and find positive differences (actual contamination)
 surface_count_diff <- surface_after_counts %>%
   full_join(surface_before_counts, 
             by = c("Trial", "Sample", "Area"), 
@@ -346,14 +548,14 @@ surface_count_diff <- surface_after_counts %>%
   mutate(Count_Diff = Count_After - Count_Before,
          Positive_Diff = pmax(Count_Diff$Count, 0))
 
-# Calculate cumulative counts
+# Calculate cumulative counts (running sum of particles larger than threshold)
 cumulative_surface_counts <- surface_count_diff %>%
   group_by(Trial, Sample) %>%
   arrange(desc(Area)) %>%
   mutate(Cumulative_Count = cumsum( Positive_Diff)) %>%
   ungroup()
 
-# Calculate average counts by trial
+# Calculate average counts by trial to reduce noise from individual samples
 average_surface_counts_cumulative <- cumulative_surface_counts %>%
   group_by(Trial, Area) %>%
   summarize(
@@ -364,9 +566,23 @@ average_surface_counts_cumulative <- cumulative_surface_counts %>%
          log_count = log10(Average_Count),
          log_count = ifelse(log_count < 0, 0, log_count))
 
+# Extract trial 12 data for later comparison
+surface_9 <- average_surface_counts_cumulative %>% 
+  filter( Trial == 9)
+
+surface_10 <- average_surface_counts_cumulative %>% 
+  filter( Trial == 10)
+
+surface_11 <- average_surface_counts_cumulative %>% 
+  filter( Trial == 11)
+
+surface_12 <- average_surface_counts_cumulative %>% 
+  filter( Trial == 12)
 
 
-# Calculate best fit lines
+
+# Calculate best fit lines for each trial using linear regression
+# in log-log space (follows IEST standard approach)
 surface_best_fits <- average_surface_counts_cumulative %>%
   group_by(Trial) %>%
   filter(Average_Count > 0) %>%
@@ -378,41 +594,9 @@ surface_best_fits <- average_surface_counts_cumulative %>%
     intercept = coef(lm(log_count ~ log_area))[1],
     .groups = "drop"
   ) %>%
-  mutate(PCL = 10^(-intercept/slope))
+  mutate(PCL = 10^(-intercept/slope))  # Calculate Product Cleanliness Level
 
-# For cumulative data - calculate the overall average across all trials
-overall_average_surface <- average_surface_counts_cumulative %>%
-  group_by(log_area) %>%
-  summarize(
-    Average_Count = mean(log_count, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Modify the cumulative distribution plot
-ggplot() +
-  geom_line(data = average_surface_counts_cumulative,
-            aes(x = log_area, y = log_count, 
-                color = factor(Trial))) +
-  geom_line(data = overall_average_surface,
-            aes(x = log_area, y = Average_Count),
-            color = "black", size = 1.2) +  # Add distinct average line
-  geom_abline(data = surface_best_fits,
-              aes(slope = slope, intercept = intercept, 
-                  color = factor(Trial)),
-              linetype = "dotted") +
-  scale_color_manual(values = trial_colors, name = "Trial") +
-  labs(
-    x = expression(log[10](Area)~"(square microns)"),
-    y = "log10(Particle Count)",
-    title = "Surface Analysis: Particle Area Distribution",
-    subtitle = "Solid lines: observed data, Dotted lines: fitted curves, Black line: overall average"
-  ) +
-  custom_theme
-
-# Display PCL and slope statistics
-kable(surface_best_fits, 
-      caption = "PCL and Slope Statistics for Surface Analysis")
-
+# Convert cumulative data to binned data (shows number of particles in each size bin)
 average_surface_binned <- average_surface_counts_cumulative %>%
   group_by(Trial) %>%
   arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
@@ -423,52 +607,34 @@ average_surface_binned <- average_surface_counts_cumulative %>%
   mutate(log_count_bin = log10(Count),
          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
 
-# Calculate overall average binned counts
-overall_average_surface_binned <- average_surface_binned %>%
-  group_by(Area) %>%
-  summarize(
-    Average_Count = mean(Count, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    log_area = log10(Area),
-    log_count = log10(Average_Count),
-    log_count = ifelse(log_count < 0 | !is.finite(log_count), 0, log_count)
-  )
+# Extract trials binned data for later comparison
+surface_9_binned <- average_surface_binned %>% 
+  filter( Trial == 9)
 
-# Modify the binned distribution plot
-ggplot() +
-  geom_line(data = average_surface_binned, 
-            aes(x = log_area, y = log_count_bin, 
-                color = factor(Trial))) +
-  geom_line(data = overall_average_surface_binned,
-            aes(x = log_area, y = log_count),
-            color = "black", size = 1.2) +  # Add distinct average line
-  scale_color_manual(values = trial_colors, name = "Trial") +
-  labs(
-    x = expression(Area~"(square microns)"),
-    y = "Average Particle Count",
-    title = "Surface Analysis: Binned Particle Size Distribution",
-    subtitle = "Particles binned by area thresholds\nBlack line: overall average"
-  ) +
-  custom_theme +
-  theme(
-    panel.grid.minor = element_blank(),
-    legend.position = "bottom"
-  )
+surface_10_binned <- average_surface_binned %>% 
+  filter( Trial == 10)
+
+surface_11_binned <- average_surface_binned %>% 
+  filter( Trial == 11)
+
+surface_12_binned <- average_surface_binned %>% 
+  filter( Trial == 12)
+
 ```
 
 ## 3. Edge Area Distribution Analysis
+<!-- This section analyzes particle distributions on the edges of samples -->
 
 ```{r edge_area_distribution_analysis}
+# Calculate normalization factors for edge measurements
 new_edge_factors<- edge_summary_data %>%
   group_by(Sample, Trial) %>%
   summarise(
-    Total_Width = sum(width)* 1e-6,
+    Total_Width = sum(width)* 1e-6,  # Convert microns to meters
     .groups = "drop"
   )
 
-# Calculate area-based counts for edge data
+# Calculate area-based counts for edge data using the same function as surface data
 edge_counts <- edge_particles_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
@@ -480,14 +646,14 @@ edge_counts <- edge_particles_data %>%
     )
   })
 
-# Calculate cumulative counts
+# Calculate cumulative counts (particles larger than each threshold)
 cumulative_edge_counts <- edge_counts %>%
   group_by(Trial, Sample) %>%
   arrange(desc(Area)) %>%
   mutate(Cumulative_Count = cumsum(Count)) %>%
   ungroup()
 
-# Calculate average counts by trial
+# Calculate average counts by trial to reduce sample variation
 average_edge_counts <- cumulative_edge_counts %>%
   group_by(Trial, Area) %>%
   summarize(
@@ -499,7 +665,7 @@ average_edge_counts <- cumulative_edge_counts %>%
          log_count = ifelse(log_count < 0, 0, log_count)) %>% 
   arrange(Trial, desc(Area)) 
 
-# Calculate best fit lines
+# Calculate best fit lines for edge data
 edge_best_fits <- average_edge_counts %>%
   group_by(Trial) %>%
   mutate(
@@ -512,41 +678,19 @@ edge_best_fits <- average_edge_counts %>%
     intercept = coef(lm(log_count ~ log_area))[1],
     .groups = "drop"
   ) %>%
-  mutate(PCL = 10^(-intercept/slope))
+  mutate(PCL = 10^(-intercept/slope))  # Calculate Product Cleanliness Level
 
-# For cumulative data - calculate the overall average across all trials
-overall_average_cumulative <- average_edge_counts %>%
-  group_by(log_area) %>%
-  summarize(
-    Average_Count = mean(log_count, na.rm = TRUE),
-    .groups = "drop"
-  )
+edge_9 <- average_edge_counts %>% 
+  filter( Trial == 9)
 
-# Modify the cumulative distribution plot
-ggplot() +
-  geom_line(data = average_edge_counts,
-            aes(x = log_area, y = log_count,
-                color = factor(Trial))) +
-  geom_line(data = overall_average_cumulative,
-            aes(x = log_area, y = Average_Count),
-            color = "black", size = 1.2) +  # Make the average line distinct
-  geom_abline(data = edge_best_fits,
-              aes(slope = slope, intercept = intercept,
-                  color = factor(Trial)),
-              linetype = "dotted") +
-  scale_color_manual(values = trial_colors, name = "Trial") +
-  labs(
-    x = expression(log[10](Area)~"(square microns)"),
-    y = "log10(Particle Count)",
-    title = "Edge Analysis: Particle Area Distribution",
-    subtitle = "Solid lines: observed data, Dotted lines: fitted curves, Black line: overall average"
-  ) +
-  custom_theme
+edge_10 <- average_edge_counts %>% 
+  filter( Trial == 10)
 
-# Display edge analysis statistics
-kable(edge_best_fits %>%
-        select(Trial, PCL, slope),
-      caption = "Edge Analysis Summary Statistics")
+edge_11 <- average_edge_counts %>% 
+  filter( Trial == 11)
+
+edge_12 <- average_edge_counts %>% 
+  filter( Trial == 12)
 
 # Calculate binned counts from cumulative data
 edge_binned <- average_edge_counts %>%
@@ -557,60 +701,39 @@ edge_binned <- average_edge_counts %>%
   ) %>%
   ungroup() %>% 
   mutate(log_count_bin = log10(Count),
-         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
 
-# Calculate overall average binned counts
-overall_average_binned <- edge_binned %>%
-  group_by(Area) %>%
-  summarize(
-    Average_Count = mean(Count, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    log_area = log10(Area),
-    log_count = log10(Average_Count),
-    log_count = ifelse(log_count < 0 | !is.finite(log_count), 0, log_count)
-  )
+edge_9_binned <- edge_binned %>% 
+  filter( Trial == 9)
 
-# Modify the binned distribution plot
-ggplot() +
-  geom_line(data = edge_binned, 
-            aes(x = log_area, y = log_count_bin, 
-                color = factor(Trial))) +
-  geom_line(data = overall_average_binned,
-            aes(x = log_area, y = log_count),
-            color = "black", size = 1.2) +  # Make the average line distinct
-  scale_color_manual(values = trial_colors, name = "Trial") +
-  labs(
-    x = expression(log10Area~"(square microns)"),
-    y = "log10(Average Particle Count)",
-    title = "Edge Analysis: Binned Particle Size Distribution",
-    subtitle = "Particles binned by logarithmic area thresholds\nBlack line: overall average"
-  ) +
-  custom_theme +
-  theme(
-    panel.grid.minor = element_blank(),
-    legend.position = "bottom"
-  )
+edge_10_binned <- edge_binned %>% 
+  filter( Trial == 10)
 
+edge_11_binned <- edge_binned %>% 
+  filter( Trial == 11)
+
+edge_12_binned <- edge_binned %>% 
+  filter( Trial == 12)
 
 ```
 
 ## 4. Calibration Wafer Analysis - Edge
+<!-- This section analyzes particle distributions on calibration wafer edges for comparison with sample edges -->
 
 ```{r calibration_wafer_analysis_edge}
+# Calculate normalization factors for calibration edges
 new_calibration_factors<- calibration_summary_data %>%
   group_by(Sample, Trial) %>%
   summarise(
-    Total_Width = sum(edge_width) * 1e-6,
+    Total_Width = sum(edge_width) * 1e-6,  # Convert to meters
     .groups = "drop"
   )
 
-
+# Calculate normalization factor to standardize to 0.1 meters
 new_calibration_factors <- new_calibration_factors %>%
   mutate(Factors = .1 /Total_Width)
 
-
+# Prepare calibration data by calculating cumulative counts
 calibration_summary_data <- calibration_summary_data %>%
   group_by(Sample, Trial) %>%
   mutate(
@@ -619,16 +742,19 @@ calibration_summary_data <- calibration_summary_data %>%
   ) %>%
   ungroup()
 
-calibration_particles_data <- calibration_particles_data %>%
+# Filter qualified particles and associate them with the correct image
+calibration_particles_data_edge <- calibration_particles_data %>%
+  filter(IsQualified == 1) %>%
   group_by(Sample, Trial) %>%
   mutate(
     ParticleIndex = row_number(),
+    # Find which image a particle belongs to based on cumulative counts
     Image = findInterval(ParticleIndex, calibration_summary_data$CumulativeCount[calibration_summary_data$Sample == first(Sample) & calibration_summary_data$Trial == first(Trial)]) + 1
   ) %>%
   ungroup()
 
 # Calculate area-based counts for calibration data
-calibration_counts <- calibration_particles_data %>%
+calibration_counts <- calibration_particles_data_edge %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
     norm_factor <- new_calibration_factors$Factors[new_calibration_factors$Sample == .y$Sample & new_calibration_factors$Trial == .y$Trial]
@@ -659,9 +785,153 @@ average_calibration_counts <- cumulative_calibration_counts %>%
          log_count = log10(Average_Count),
          log_count = ifelse(log_count < 0, 0, log_count))
 
-# Calculate best fit lines
-calibration_best_fits <- average_calibration_counts %>%
+# Calculate best fit lines for calibration data
+# calibration_best_fits <- average_calibration_counts %>%
+#   group_by(Trial) %>%
+#   mutate(log_area = log10(Area),
+#          log_count = log10(Average_Count),
+#          log_count = ifelse(log_count < 0, 0, log_count)) %>%
+#   summarise(
+#     slope = coef(lm(log_count ~ log_area))[2],
+#     intercept = coef(lm(log_count ~ log_area))[1],
+#     .groups = "drop"
+#   ) %>%
+#   mutate(PCL = 10^(-intercept/slope))  # Calculate Product Cleanliness Level
+
+cw_edge_9 <- average_calibration_counts %>% 
+  filter( Trial == 9)
+
+cw_edge_10 <- average_calibration_counts %>% 
+  filter( Trial == 10)
+
+cw_edge_11 <- average_calibration_counts %>% 
+  filter( Trial == 11)
+
+cw_edge_12 <- average_calibration_counts %>% 
+  filter( Trial == 12)
+
+# Convert to binned data for size distribution analysis
+average_calibration_binned <- average_calibration_counts %>%
   group_by(Trial) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(log_count[1], diff(Average_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+
+cw_edge_9_binned <- average_calibration_binned %>% 
+  filter( Trial == 9)
+
+cw_edge_10_binned <- average_calibration_binned %>% 
+  filter( Trial == 10)
+
+cw_edge_11_binned <- average_calibration_binned %>% 
+  filter( Trial == 11)
+
+cw_edge_12_binned <- average_calibration_binned %>% 
+  filter( Trial == 12)
+
+
+```
+
+## 5. Calibration Surface Analysis
+<!-- This section analyzes particle distributions on calibration wafer surfaces -->
+
+```{r cal_surface_area_distribution_analysis}
+# Filter for particles above minimum size
+cwsurface_before_particles <- Cwsurface_before_data$particle_data %>%
+  filter(Area > 1)
+cwsurface_after_particles <- Cwsurface_after_data$particle_data %>%
+  filter(Area > 1)
+
+# Define IEST standard parameters and calculate sample areas
+slope <- -0.926  # Standard IEST slope
+image_size <- 600 * 450 
+cwnew_sample_areas <- Cwsurface_before_data$summary_data %>%
+  group_by(Sample, Trial, Cleaning_Method) %>%
+  summarise(
+    Total_Images = n(),
+    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
+    .groups = "drop"
+  )
+
+# Function to get area-based counts (same as used before)
+# Redefining here for clarity in this section
+get_area_counts <- function(data, area_thresholds, normalization_factor) {
+  # Initialize counts vector
+  counts <- numeric(length(area_thresholds))
+  
+  # For bins except the last one
+  for(i in 1:(length(area_thresholds) - 1)) {
+    counts[i] <- sum(data$Area >= area_thresholds[i] & 
+                    data$Area < area_thresholds[i + 1]) * normalization_factor
+  }
+  
+  # For the last bin
+  counts[length(area_thresholds)] <- sum(data$Area >= area_thresholds[length(area_thresholds)]) * normalization_factor
+  
+  # Return results in the same format as expected by the original code
+  tibble(
+    Area = area_thresholds,
+    Count = counts
+  )
+}
+
+# Calculate area-based counts for calibration surface data
+cwsurface_before_counts <- cwsurface_before_particles %>%
+  group_by(Trial, Sample) %>%
+  group_modify(~ {
+    norm_factor <- 0.1 /  cwnew_sample_areas$Total_Area[cwnew_sample_areas$Sample == .y$Sample &  cwnew_sample_areas$Trial == .y$Trial]
+    counts <- get_area_counts(.x,area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
+    )
+  })
+
+cwsurface_after_counts <- Cwsurface_after_data$particle_data %>%
+  group_by(Trial, Sample) %>%
+  group_modify(~ {
+    norm_factor <- 0.1 /  cwnew_sample_areas$Total_Area[cwnew_sample_areas$Sample == .y$Sample &  cwnew_sample_areas$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
+    )
+  })
+
+# Calculate differences (after - before) for contamination effect
+cwsurface_count_diff <- cwsurface_after_counts %>%
+  full_join(cwsurface_before_counts, 
+            by = c("Trial", "Sample", "Area"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Positive_Diff = pmax(Count_Diff$Count, 0))
+
+# Calculate cumulative counts (running sum from largest to smallest particle)
+cwcumulative_surface_counts <- cwsurface_count_diff %>%
+  group_by(Trial, Sample) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum( Positive_Diff)) %>%
+  ungroup()
+
+# Calculate average counts by trial
+cwaverage_surface_counts_cumulative <- cwcumulative_surface_counts %>%
+  group_by(Trial, Area) %>%
+  summarize(
+    Average_Count = mean(Cumulative_Count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count))
+
+# Calculate best fit lines for calibration surface data
+cwsurface_best_fits <- cwaverage_surface_counts_cumulative %>%
+  group_by(Trial) %>%
+  filter(Average_Count > 0) %>%
   mutate(log_area = log10(Area),
          log_count = log10(Average_Count),
          log_count = ifelse(log_count < 0, 0, log_count)) %>%
@@ -672,41 +942,22 @@ calibration_best_fits <- average_calibration_counts %>%
   ) %>%
   mutate(PCL = 10^(-intercept/slope))
 
-# For cumulative data - calculate the overall average across all trials
-overall_average_calibration <- average_calibration_counts %>%
-  group_by(log_area) %>%
-  summarize(
-    Average_Count = mean(log_count, na.rm = TRUE),
-    .groups = "drop"
-  )
+# Extract trials binned data for later comparison
+cw_surface_9 <- cwaverage_surface_counts_cumulative %>% 
+  filter( Trial == 9)
 
-# Modify the cumulative distribution plot
-ggplot() +
-  geom_line(data = average_calibration_counts,
-            aes(x = log_area, y = log_count,
-                color = factor(Trial))) +
-  geom_line(data = overall_average_calibration,
-            aes(x = log_area, y = Average_Count),
-            color = "black", size = 1.2) +  # Add distinct average line
-  geom_abline(data = calibration_best_fits,
-              aes(slope = slope, intercept = intercept,
-                  color = factor(Trial)),
-              linetype = "dotted") +
-  scale_color_manual(values = trial_colors, name = "Trial") +
-  labs(
-    x = expression(log[10](Area)~"(square microns)"),
-    y = "log10(Particle Count)",
-    title = "Calibration Wafer Analysis: Particle Area Distribution",
-    subtitle = "Solid lines: observed data, Dotted lines: fitted curves, Black line: overall average"
-  ) +
-  custom_theme
+cw_surface_10 <- cwaverage_surface_counts_cumulative %>% 
+  filter( Trial == 10)
 
-# Display calibration analysis statistics
-kable(calibration_best_fits,
-      caption = "Calibration Wafer Analysis Summary Statistics")
+cw_surface_11 <- cwaverage_surface_counts_cumulative %>% 
+  filter( Trial == 11)
+
+cw_surface_12 <- cwaverage_surface_counts_cumulative %>% 
+  filter( Trial == 12)
 
 
-average_calibration_binned <- average_calibration_counts %>%
+# Convert to binned data for size distribution analysis
+cwaverage_surface_binned <- cwaverage_surface_counts_cumulative %>%
   group_by(Trial) %>%
   arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
   mutate(
@@ -716,48 +967,172 @@ average_calibration_binned <- average_calibration_counts %>%
   mutate(log_count_bin = log10(Count),
          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
 
-# Calculate overall average binned counts
-overall_average_calibration_binned <- average_calibration_binned %>%
-  group_by(Area) %>%
-  summarize(
-    Average_Count = mean(Count, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    log_area = log10(Area),
-    log_count = log10(Average_Count),
-    log_count = ifelse(log_count < 0 | !is.finite(log_count), 0, log_count)
-  )
+# Extract trials binned data for later comparison
+cw_surface_9_binned <- cwaverage_surface_binned %>% 
+  filter( Trial == 9)
 
+cw_surface_10_binned <- cwaverage_surface_binned %>% 
+  filter( Trial == 10)
 
+cw_surface_11_binned <- cwaverage_surface_binned %>% 
+  filter( Trial == 11)
 
-# Modify the binned distribution plot
-ggplot() +
-  geom_line(data = average_calibration_binned, 
-            aes(x = log_area, y = log_count_bin, 
-                color = factor(Trial))) +
-  geom_line(data = overall_average_calibration_binned,
-            aes(x = log_area, y = log_count),
-            color = "black", size = 1.2) +  # Add distinct average line
-  scale_color_manual(values = trial_colors, name = "Trial") +
-  labs(
-    x = expression(Area~"(square microns)"),
-    y = "Average Particle Count",
-    title = "Calibration Wafer Analysis: Binned Particle Size Distribution",
-    subtitle = "Particles binned by logarithmic area thresholds\nBlack line: overall average"
-  ) +
-  custom_theme +
-  theme(
-    panel.grid.minor = element_blank(),
-    legend.position = "bottom"
-  )
+cw_surface_12_binned <- cwaverage_surface_binned %>% 
+  filter( Trial == 12)
 
 ```
 
-## 5. Edge Model Analysis
+## 6. Witness Surface Analysis
+<!-- This section analyzes particle distributions on calibration wafer surfaces -->
+
+```{r wit_surface_area_distribution_analysis}
+# Filter for particles above minimum size
+witsurface_before_particles <- Witsurface_before_data$particle_data %>%
+  filter(Area > 1)
+witsurface_after_particles <- Witsurface_after_data$particle_data %>%
+  filter(Area > 1)
+
+# Define IEST standard parameters and calculate sample areas
+slope <- -0.926  # Standard IEST slope
+image_size <- 600 * 450 
+witnew_sample_areas <- Witsurface_before_data$summary_data %>%
+  group_by( Trial, Cleaning_Method) %>%
+  summarise(
+    Total_Images = n(),
+    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
+    .groups = "drop"
+  )
+
+# Function to get area-based counts (same as used before)
+# Redefining here for clarity in this section
+get_area_counts <- function(data, area_thresholds, normalization_factor) {
+  # Initialize counts vector
+  counts <- numeric(length(area_thresholds))
+  
+  # For bins except the last one
+  for(i in 1:(length(area_thresholds) - 1)) {
+    counts[i] <- sum(data$Area >= area_thresholds[i] & 
+                    data$Area < area_thresholds[i + 1]) * normalization_factor
+  }
+  
+  # For the last bin
+  counts[length(area_thresholds)] <- sum(data$Area >= area_thresholds[length(area_thresholds)]) * normalization_factor
+  
+  # Return results in the same format as expected by the original code
+  tibble(
+    Area = area_thresholds,
+    Count = counts
+  )
+}
+
+# Calculate area-based counts for calibration surface data
+witsurface_before_counts <- witsurface_before_particles %>%
+  group_by(Trial) %>%
+  group_modify(~ {
+    norm_factor <- 0.1 /  witnew_sample_areas$Total_Area[witnew_sample_areas$Trial == .y$Trial]
+    counts <- get_area_counts(.x,area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
+    )
+  })
+
+witsurface_after_counts <- Witsurface_after_data$particle_data %>%
+  group_by(Trial) %>%
+  group_modify(~ {
+    norm_factor <- 0.1 /  witnew_sample_areas$Total_Area[witnew_sample_areas$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
+    )
+  })
+
+# Calculate differences (after - before) for contamination effect
+witsurface_count_diff <- witsurface_after_counts %>%
+  full_join(witsurface_before_counts, 
+            by = c("Trial", "Area"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Positive_Diff = pmax(Count_Diff$Count, 0))
+
+# Calculate cumulative counts (running sum from largest to smallest particle)
+witcumulative_surface_counts <- witsurface_count_diff %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum( Positive_Diff)) %>%
+  ungroup()
+
+# Calculate average counts by trial
+witaverage_surface_counts_cumulative <- witcumulative_surface_counts %>%
+  group_by(Trial, Area) %>%
+  summarize(
+    Average_Count = mean(Cumulative_Count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count))
+
+# Calculate best fit lines for calibration surface data
+witsurface_best_fits <- witaverage_surface_counts_cumulative %>%
+  group_by(Trial) %>%
+  filter(Average_Count > 0) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>%
+  summarise(
+    slope = coef(lm(log_count ~ log_area))[2],
+    intercept = coef(lm(log_count ~ log_area))[1],
+    .groups = "drop"
+  ) %>%
+  mutate(PCL = 10^(-intercept/slope))
+
+# Extract trials binned data for later comparison
+wit_surface_9 <- witaverage_surface_counts_cumulative %>% 
+  filter( Trial == 9)
+
+wit_surface_10 <- witaverage_surface_counts_cumulative %>% 
+  filter( Trial == 10)
+
+wit_surface_11 <- witaverage_surface_counts_cumulative %>% 
+  filter( Trial == 11)
+
+wit_surface_12 <- witaverage_surface_counts_cumulative %>% 
+  filter( Trial == 12)
+
+
+# Convert to binned data for size distribution analysis
+witaverage_surface_binned <- witaverage_surface_counts_cumulative %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Average_Count[1], diff(Average_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+
+# Extract trials binned data for later comparison
+wit_surface_9_binned <- witaverage_surface_binned %>% 
+  filter( Trial == 9)
+
+wit_surface_10_binned <- witaverage_surface_binned %>% 
+  filter( Trial == 10)
+
+wit_surface_11_binned <- witaverage_surface_binned %>% 
+  filter( Trial == 11)
+
+wit_surface_12_binned <- witaverage_surface_binned %>% 
+  filter( Trial == 12)
+
+```
+
+## 6. Edge Model Analysis
+<!-- This section creates a model to predict edge contamination from surface contamination data -->
 
 ```{r edge_model_analysis}
-
+# Get sample areas for normalization
 new_sample_areas <- surface_before_data$summary_data %>%
   group_by(Sample, Trial, Cleaning_Method) %>%
   summarise(
@@ -766,8 +1141,8 @@ new_sample_areas <- surface_before_data$summary_data %>%
     .groups = "drop"
   )
 
-# New function to sum areas within thresholds
-
+# New function to sum areas of particles within threshold bins
+# Not just counting particles but summing their areas
 get_area_sums <- function(data, area_thresholds, normalization_factor) {
   # Initialize sums vector
   areas <- numeric(length(area_thresholds))
@@ -784,6 +1159,7 @@ get_area_sums <- function(data, area_thresholds, normalization_factor) {
   last_bin_mask <- data$Area >= area_thresholds[length(area_thresholds)]
   areas[length(area_thresholds)] <- sum(data$Area[last_bin_mask], na.rm = TRUE) * normalization_factor
   
+  # Also calculate counts (similar to get_area_counts function)
   for(i in 1:(length(area_thresholds) - 1)) {
     counts[i] <- sum(data$Area >= area_thresholds[i] & 
                     data$Area < area_thresholds[i + 1]) * normalization_factor
@@ -792,7 +1168,7 @@ get_area_sums <- function(data, area_thresholds, normalization_factor) {
   # For the last bin
   counts[length(area_thresholds)] <- sum(data$Area >= area_thresholds[length(area_thresholds)]) * normalization_factor
   
-  
+  # Return both counts and areas
   tibble(
     Area = area_thresholds,
     Count = counts,
@@ -800,7 +1176,7 @@ get_area_sums <- function(data, area_thresholds, normalization_factor) {
   )
 }
 
-# Calculate model parameters using area summation
+# Calculate model parameters using area summation for after contamination
 surface_area_after <- surface_after_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
@@ -814,6 +1190,7 @@ surface_area_after <- surface_after_data$particle_data %>%
     )
   }) 
 
+# Calculate model parameters for before contamination
 surface_area_before <- surface_before_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
@@ -826,6 +1203,7 @@ surface_area_before <- surface_before_data$particle_data %>%
     )
   }) 
 
+# Calculate differences to isolate contamination effect
 surface_area_diff <- surface_area_after %>%
   full_join(surface_area_before, 
             by = c("Trial", "Sample", "Area"), 
@@ -835,9 +1213,8 @@ surface_area_diff <- surface_area_after %>%
          Positive_Diff_Count = pmax(Count_Diff, 0),
          Positive_Diff_Area = pmax(Area_Diff, 0))
 
-
-
 # Calculate model parameters using area-based approach
+# This implements the surface-to-edge contamination model
 edge_model_data <- surface_area_diff %>%
   group_by(Trial, Sample, Area) %>%
   mutate(
@@ -855,27 +1232,25 @@ edge_model_data <- surface_area_diff %>%
   ) %>%
   ungroup()
 
-# Calculate cumulative counts
+# Calculate cumulative counts for modeled edge particles
 cumulative_model_counts <- edge_model_data %>%
   group_by(Trial, Sample) %>%
   arrange(desc(Area)) %>%
   mutate(Cumulative_Count = cumsum(Nedge)) %>%
   ungroup()
 
-# Calculate average counts by trial
+# Calculate average modeled counts by trial
 average_model_counts_cumulative <- cumulative_model_counts %>%
   group_by(Trial, Area) %>%
   summarize(
     Average_Count = mean(Cumulative_Count, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  mutate(log_area = log10(Area),
+  mutate(log_area = log10(Area) - log10(2),
          log_count = log10(Average_Count),
          log_count = ifelse(log_count < 0, 0, log_count))
 
-
-
-# Calculate best fit lines
+# Calculate best fit lines for modeled data
 model_best_fits <- average_model_counts_cumulative %>%
   group_by(Trial) %>%
   filter(Average_Count > 0) %>%
@@ -889,43 +1264,19 @@ model_best_fits <- average_model_counts_cumulative %>%
   ) %>%
   mutate(PCL = 10^(-intercept/slope))
 
-# For cumulative data - calculate the overall average across all trials
-overall_average_model <- average_model_counts_cumulative %>%
-  group_by(log_area) %>%
-  summarize(
-    Average_Count = mean(log_count, na.rm = TRUE),
-    .groups = "drop"
-  )
+model_edge_9 <- average_model_counts_cumulative %>% 
+  filter( Trial == 9)
 
+model_edge_10 <- average_model_counts_cumulative %>% 
+  filter( Trial == 10)
 
-# Create edge model visualization
-ggplot() +
-  geom_line(data = average_model_counts_cumulative,
-            aes(x = log_area, y = log_count,
-                color = factor(Trial))) +
-  geom_line(data = overall_average_model,
-            aes(x = log_area, y = Average_Count),
-            color = "black", size = 1.2) +  
-  geom_abline(data = model_best_fits,
-              aes(slope = slope, intercept = intercept,
-                  color = factor(Trial)),
-              linetype = "dotted") +
-  scale_color_manual(values = trial_colors, name = "Trial") +
-  labs(
-    x = expression(log[10](Area)~"(square microns)"),
-    y = "log10(Particle Count)",
-    title = "Edge Model Analysis: Particle Area Distribution",
-    subtitle = "Solid lines: modeled data, Dotted lines: fitted curves, Black line: overall average"
-  ) +
-  custom_theme
+model_edge_11 <- average_model_counts_cumulative %>% 
+  filter( Trial == 11)
 
+model_edge_12 <- average_model_counts_cumulative %>% 
+  filter( Trial == 12)
 
-# Display model statistics
-kable(model_best_fits %>%
-        select(Trial, PCL, slope),
-      caption = "Edge Model Analysis Summary Statistics")
-
-
+# Convert to binned data for size distribution analysis
 average_model_binned <- average_model_counts_cumulative %>%
   group_by(Trial) %>%
   arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
@@ -936,244 +1287,3943 @@ average_model_binned <- average_model_counts_cumulative %>%
   mutate(log_count_bin = log10(Count),
          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
 
-# Calculate overall average binned counts
-overall_average_model_binned <- average_model_binned %>%
-  group_by(Area) %>%
-  summarize(
-    Average_Count = mean(Count, na.rm = TRUE),
+model_edge_9_binned <- average_model_binned %>% 
+  filter( Trial == 9)
+
+model_edge_10_binned <- average_model_binned %>% 
+  filter( Trial == 10)
+
+model_edge_11_binned <- average_model_binned %>% 
+  filter( Trial == 11)
+
+model_edge_12_binned <- average_model_binned %>% 
+  filter( Trial == 12)
+
+
+```
+
+## 7. Straight Line Model (SLSM, SLCM, and SLWM)
+
+```{r Straight_Line_Model}
+## 9. Edge Contamination Line Intersection Analysis
+# This section simulates drawing a line across surfaces and analyzes how particles intersect with it
+
+# Filter Trial 12 data from both surfaces, BEFORE contamination
+starshade_surface_before9 <- surface_before_particles %>%
+  filter(Trial == 9) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_before9 <- Cwsurface_before_data$particle_data %>%
+  filter(Trial == 9, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+# Filter Trial 12 data from both surfaces, AFTER contamination
+starshade_surface_after9 <- surface_after_particles %>%
+  filter(Trial == 9) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_after9 <- Cwsurface_after_data$particle_data %>%
+  filter(Trial == 9, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+starshade_surface_before10 <- surface_before_particles %>%
+  filter(Trial == 10) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_before10 <- Cwsurface_before_data$particle_data %>%
+  filter(Trial == 10, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+# Filter Trial 12 data from both surfaces, AFTER contamination
+starshade_surface_after10 <- surface_after_particles %>%
+  filter(Trial == 10) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_after10 <- Cwsurface_after_data$particle_data %>%
+  filter(Trial == 10, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+starshade_surface_before11 <- surface_before_particles %>%
+  filter(Trial == 11) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_before11 <- Cwsurface_before_data$particle_data %>%
+  filter(Trial == 11, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+# Filter Trial 12 data from both surfaces, AFTER contamination
+starshade_surface_after11 <- surface_after_particles %>%
+  filter(Trial == 11) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_after11 <- Cwsurface_after_data$particle_data %>%
+  filter(Trial == 11, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+starshade_surface_before12 <- surface_before_particles %>%
+  filter(Trial == 12) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_before12 <- Cwsurface_before_data$particle_data %>%
+  filter(Trial == 12, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+# Filter Trial 12 data from both surfaces, AFTER contamination
+starshade_surface_after12 <- surface_after_particles %>%
+  filter(Trial == 12) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_after12 <- Cwsurface_after_data$particle_data %>%
+  filter(Trial == 12, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+witness_surface_before9 <- Witsurface_before_data$particle_data %>%
+  filter(Trial == 9) %>%
+  select(Area, BX, BY, Width, Height)
+
+witness_surface_before10 <- Witsurface_before_data$particle_data %>%
+  filter(Trial == 10, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+witness_surface_before11 <- Witsurface_before_data$particle_data %>%
+  filter(Trial == 11) %>%
+  select(Area, BX, BY, Width, Height)
+
+witness_surface_before12 <- Witsurface_before_data$particle_data %>%
+  filter(Trial == 12, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+# Filter Trial 12 data from both surfaces, AFTER contamination
+witness_surface_after9 <- Witsurface_after_data$particle_data %>%
+  filter(Trial == 9) %>%
+  select(Area, BX, BY, Width, Height)
+
+witness_surface_after10 <- Witsurface_after_data$particle_data %>%
+  filter(Trial == 10, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+witness_surface_after11 <- Witsurface_after_data$particle_data %>%
+  filter(Trial == 11) %>%
+  select(Area, BX, BY, Width, Height)
+
+witness_surface_after12 <- Witsurface_after_data$particle_data %>%
+  filter(Trial == 12, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+
+# Calculate image dimensions for positioning
+image_width <- 600  
+image_height <- 450 
+
+# Function to check if a particle intersects with a horizontal line and calculate overhang area
+# This simulates how a particle would interact with an edge
+particle_intersects_line <- function(particle, line_y) {
+  # Calculate the top and bottom boundaries of the particle
+  particle_top <- particle$BY + particle$Height
+  particle_bottom <- particle$BY 
+  
+  # Check if the line passes through the particle
+  if (line_y <= particle_top && line_y >= particle_bottom) {
+    # Calculate proportion of area that would overhang
+    # Distance from line to top of particle divided by total height
+    proportion_above_line <- (particle_top - line_y) / particle$Height
+    
+    # Calculate the area that would overhang the edge (below the line)
+    overhang_area <- particle$Area * (proportion_above_line)
+    
+    # Return intersection details
+    return(list(
+      intersects = TRUE,
+      area = as.numeric(particle$Area),
+      overhang_proportion = as.numeric(proportion_above_line),
+      overhang_area = as.numeric(overhang_area),
+      diameter = 2 * sqrt(particle$Area / pi),  # Equivalent circular diameter
+      distance_from_line = min(line_y - particle_top, particle_bottom - line_y),  # How close to edge of particle
+      relative_position = (line_y - particle_top) / particle$Height  # Relative position (0 = top, 1 = bottom)
+    ))
+  } else {
+    return(list(intersects = FALSE))
+  }
+}
+
+# Function to analyze intersections for a single line
+analyze_line_intersections <- function(particles_data, line_positions = NULL) {
+  # If no specific positions provided, use middle of image
+  if (is.null(line_positions)) {
+    line_positions <- image_height / 2
+  }
+  
+  # Initialize results storage
+  all_results <- list()
+  
+  # For each line position
+  for (i in 1:length(line_positions)) {
+    line_y <- line_positions[i]
+    
+    # Process each particle to check for intersection
+    intersections <- map(1:nrow(particles_data), function(j) {
+      particle_intersects_line(particles_data[j,], line_y)
+    })
+    
+    # Filter to only intersecting particles
+    intersecting_particles <- intersections[sapply(intersections, function(x) x$intersects)]
+    
+    # Calculate statistics for this line
+    if (length(intersecting_particles) > 0) {
+    all_results[[i]] <- list(
+      line_position = line_y,
+      num_intersections = length(intersecting_particles),
+      intersecting_particles = intersecting_particles,
+      total_area = sum(sapply(intersecting_particles, function(x) x$area)),
+      overhang_area = sum(sapply(intersecting_particles, function(x) x$overhang_area)),
+      size_data = tibble(
+          area = sapply(intersecting_particles, function(x) x$area),
+          diameter = sapply(intersecting_particles, function(x) x$diameter),
+          overhang_prop = sapply(intersecting_particles, function(x) x$overhang_proportion)
+        )
+    )
+    } else {
+      all_results[[i]] <- list(
+        line_position = line_y,
+        num_intersections = 0,
+        intersecting_particles = list(),
+        total_area = 0,
+        overhang_area = 0,
+        size_data = tibble(area = numeric(0), diameter = numeric(0), overhang_prop = numeric(0))
+      )
+    }
+  }
+  
+  return(all_results)
+}
+
+# Use the middle of the image for the edge simulation line
+central_line_y <- image_height / 2
+
+# Analyze both surfaces with the same single line - BEFORE contamination
+starshade_before_results9 <- analyze_line_intersections(starshade_surface_before9, c(central_line_y))
+witness_before_results9 <- analyze_line_intersections(witness_surface_before9, c(central_line_y))
+
+# Analyze both surfaces with the same single line - AFTER contamination
+starshade_after_results9 <- analyze_line_intersections(starshade_surface_after9, c(central_line_y))
+witness_after_results9 <- analyze_line_intersections(witness_surface_after9, c(central_line_y))
+
+# Analyze both surfaces with the same single line - BEFORE contamination
+starshade_before_results10 <- analyze_line_intersections(starshade_surface_before10, c(central_line_y))
+witness_before_results10 <- analyze_line_intersections(witness_surface_before10, c(central_line_y))
+
+# Analyze both surfaces with the same single line - AFTER contamination
+starshade_after_results10 <- analyze_line_intersections(starshade_surface_after10, c(central_line_y))
+witness_after_results10 <- analyze_line_intersections(witness_surface_after10, c(central_line_y))
+
+# Analyze both surfaces with the same single line - BEFORE contamination
+starshade_before_results11 <- analyze_line_intersections(starshade_surface_before11, c(central_line_y))
+witness_before_results11 <- analyze_line_intersections(witness_surface_before11, c(central_line_y))
+
+# Analyze both surfaces with the same single line - AFTER contamination
+starshade_after_results11 <- analyze_line_intersections(starshade_surface_after11, c(central_line_y))
+witness_after_results11 <- analyze_line_intersections(witness_surface_after11, c(central_line_y))
+
+# Analyze both surfaces with the same single line - BEFORE contamination
+starshade_before_results12 <- analyze_line_intersections(starshade_surface_before12, c(central_line_y))
+calibration_before_results12 <- analyze_line_intersections(calibration_surface_before12, c(central_line_y))
+witness_before_results12 <- analyze_line_intersections(witness_surface_before12, c(central_line_y))
+
+# Analyze both surfaces with the same single line - AFTER contamination
+starshade_after_results12 <- analyze_line_intersections(starshade_surface_after12, c(central_line_y))
+calibration_after_results12 <- analyze_line_intersections(calibration_surface_after12, c(central_line_y))
+witness_after_results12 <- analyze_line_intersections(witness_surface_after12, c(central_line_y))
+
+#Extract the results for the particles that intersect the line
+starshade_sim_after9 <- if(length(starshade_after_results9[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_after_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "after",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+starshade_sim_before9 <- if(length(starshade_before_results9[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_before_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "before",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+starshade_sim_after10 <- if(length(starshade_after_results10[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_after_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "after",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+starshade_sim_before10 <- if(length(starshade_before_results10[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_before_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "before",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+starshade_sim_after11 <- if(length(starshade_after_results11[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_after_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "after",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+starshade_sim_before11 <- if(length(starshade_before_results11[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_before_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "before",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+starshade_sim_after12 <- if(length(starshade_after_results12[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_after_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "after",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+starshade_sim_before12 <- if(length(starshade_before_results12[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_before_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "before",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+
+
+calibration_sim_after12 <- if(length(calibration_after_results12[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_after_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "after",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+calibration_sim_before12 <- if(length(calibration_before_results12[[1]]$intersecting_particles) > 0) {
+  map_df(starshade_before_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "starshade_surface",
+           time = "before",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+witness_sim_after9 <- if(length(witness_after_results9[[1]]$intersecting_particles) > 0) {
+  map_df(witness_after_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "calibration_surface",
+           time = "after",
+           Trial = "9")
+} else {
+  # Create an empty dataframe with the same structure
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+witness_sim_before9 <- if(length(witness_before_results9[[1]]$intersecting_particles) > 0) {
+  map_df(witness_before_results9[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "calibration_surface",
+           time = "before",
+           Trial = "9")
+} else {
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+witness_sim_after10 <- if(length(witness_after_results10[[1]]$intersecting_particles) > 0) {
+  map_df(witness_after_results10[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "calibration_surface",
+           time = "after",
+           Trial = "10")
+} else {
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+witness_sim_before10 <- if(length(witness_before_results10[[1]]$intersecting_particles) > 0) {
+  map_df(witness_before_results10[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "calibration_surface",
+           time = "before",
+           Trial = "10")
+} else {
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+witness_sim_after11 <- if(length(witness_after_results11[[1]]$intersecting_particles) > 0) {
+  map_df(witness_after_results11[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "calibration_surface",
+           time = "after",
+           Trial = "11")
+} else {
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+witness_sim_before11 <- if(length(witness_before_results11[[1]]$intersecting_particles) > 0) {
+  map_df(witness_before_results11[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "calibration_surface",
+           time = "before",
+           Trial = "11")
+} else {
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+witness_sim_after12 <- if(length(witness_after_results12[[1]]$intersecting_particles) > 0) {
+  map_df(witness_after_results12[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "calibration_surface",
+           time = "after",
+           Trial = "12")
+} else {
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+witness_sim_before12 <- if(length(witness_before_results12[[1]]$intersecting_particles) > 0) {
+  map_df(witness_before_results12[[1]]$intersecting_particles, ~as.data.frame(t(.x))) %>% 
+    mutate(area = as.numeric(area),
+           overhang_proportion = as.numeric(overhang_proportion),
+           overhang_area = as.numeric(overhang_area),
+           diameter = as.numeric(diameter),
+           distance_from_line = as.numeric(distance_from_line),
+           relative_position = as.numeric(relative_position),
+           source = "calibration_surface",
+           time = "before",
+           Trial = "12")
+} else {
+  data.frame(
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    Trial = character(0)
+  )
+}
+
+
+# Datasets to work from
+
+s_bmodel_edge_before <- rbind(starshade_sim_before9, starshade_sim_before10, starshade_sim_before11, starshade_sim_before12)
+
+s_bmodel_edge_after <- rbind(starshade_sim_after9, starshade_sim_after10, starshade_sim_after11, starshade_sim_after12)
+
+w_bmodel_edge_before <- rbind(witness_sim_before9, witness_sim_before10, witness_sim_before11, witness_sim_before12)
+
+w_bmodel_edge_after <- rbind(witness_sim_after9, witness_sim_after10, witness_sim_after11, witness_sim_after12)
+
+c_bmodel_edge_before <- rbind(calibration_sim_before12)
+
+c_bmodel_edge_after <- rbind(calibration_sim_after12)
+
+
+# Calculate normalization factors for edge measurements
+new_edge_factors<- surface_before_data$summary_data %>%
+  group_by(Trial) %>%
+  summarise(
+    Total_Width = n() * 600 * 1e-6,  # Convert microns to meters
     .groups = "drop"
-  ) %>%
-  mutate(
-    log_area = log10(Area),
-    log_count = log10(Average_Count),
-    log_count = ifelse(log_count < 0 | !is.finite(log_count), 0, log_count)
   )
 
+get_area_counts <- function(data, area_thresholds, normalization_factor) {
+  # Initialize counts vector
+  counts <- numeric(length(area_thresholds))
+  
+  # For bins except the last one
+  for(i in 1:(length(area_thresholds) - 1)) {
+    counts[i] <- sum(data$overhang_area >= area_thresholds[i] & 
+                    data$overhang_area < area_thresholds[i + 1]) * normalization_factor
+  }
+  
+  # For the last bin
+  counts[length(area_thresholds)] <- sum(data$overhang_area >= area_thresholds[length(area_thresholds)]) * normalization_factor
+  
+  # Return results in the same format as expected by the original code
+  tibble(
+    Area = area_thresholds,
+    Count = counts
+  )
+}
 
+# Calculate area-based counts for edge data using the same function as surface data
+edge_counts_before <- s_bmodel_edge_before %>%
+  group_by(Trial) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+edge_counts_after <- s_bmodel_edge_after %>%
+  group_by(Trial) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+surface_count_diff <- edge_counts_after %>%
+  full_join(edge_counts_before, 
+            by = c("Trial", "Area"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Positive_Diff = pmax(Count_Diff, 0))
+
+# Calculate cumulative counts (particles larger than each threshold)
+cumulative_edge_counts <- surface_count_diff %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum(Positive_Diff)) %>%
+  ungroup() %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Cumulative_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>% 
+  arrange(Trial, desc(Area)) 
+
+
+#  Future Use # Calculate best fit lines for edge data
+# edge_best_fits <- average_edge_counts %>%
+#   group_by(Trial) %>%
+#   mutate(
+#     log_area = log10(Area),
+#     log_count = log10(Average_Count),
+#     log_count = ifelse(log_count < 0, 0, log_count)
+#   ) %>%
+#   summarise(
+#     slope = coef(lm(log_count ~ log_area))[2],
+#     intercept = coef(lm(log_count ~ log_area))[1],
+#     .groups = "drop"
+#   ) %>%
+#   mutate(PCL = 10^(-intercept/slope))  # Calculate Product Cleanliness Level
+
+s_bmodel_edge_9 <- cumulative_edge_counts %>% 
+  filter( Trial == 9)
+
+s_bmodel_edge_10 <- cumulative_edge_counts %>% 
+  filter( Trial == 10)
+
+s_bmodel_edge_11 <- cumulative_edge_counts %>% 
+  filter( Trial == 11)
+
+s_bmodel_edge_12 <- cumulative_edge_counts %>% 
+  filter( Trial == 12)
+
+# Calculate binned counts from cumulative data
+edge_binned <- cumulative_edge_counts %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Cumulative_Count[1], diff(Cumulative_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+
+s_bmodel_edge_9_binned <- edge_binned %>% 
+  filter( Trial == 9)
+
+s_bmodel_edge_10_binned <- edge_binned %>% 
+  filter( Trial == 10)
+
+s_bmodel_edge_11_binned <- edge_binned %>% 
+  filter( Trial == 11)
+
+s_bmodel_edge_12_binned <- edge_binned %>% 
+  filter( Trial == 12)
+
+#Calibration Wafer Now
+
+# Calculate normalization factors for edge measurements
+new_edge_factors<- Cwsurface_before_data$summary_data %>%
+  group_by(Trial) %>%
+  summarise(
+    Total_Width = n() * 600 * 1e-6,  # Convert microns to meters
+    .groups = "drop"
+  )
+
+get_area_counts <- function(data, area_thresholds, normalization_factor) {
+  # Initialize counts vector
+  counts <- numeric(length(area_thresholds))
+  
+  # For bins except the last one
+  for(i in 1:(length(area_thresholds) - 1)) {
+    counts[i] <- sum(data$overhang_area >= area_thresholds[i] & 
+                    data$overhang_area < area_thresholds[i + 1]) * normalization_factor
+  }
+  
+  # For the last bin
+  counts[length(area_thresholds)] <- sum(data$overhang_area >= area_thresholds[length(area_thresholds)]) * normalization_factor
+  
+  # Return results in the same format as expected by the original code
+  tibble(
+    Area = area_thresholds,
+    Count = counts
+  )
+}
+
+# Calculate area-based counts for edge data using the same function as surface data
+edge_counts_before <- c_bmodel_edge_before %>%
+  group_by(Trial) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+edge_counts_after <- c_bmodel_edge_after %>%
+  group_by(Trial) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+surface_count_diff <- edge_counts_after %>%
+  full_join(edge_counts_before, 
+            by = c("Trial", "Area"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Positive_Diff = pmax(Count_Diff, 0))
+
+# Calculate cumulative counts (particles larger than each threshold)
+cumulative_edge_counts <- surface_count_diff %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum(Positive_Diff)) %>%
+  ungroup() %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Cumulative_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>% 
+  arrange(Trial, desc(Area)) 
+
+
+#  Future Use # Calculate best fit lines for edge data
+# edge_best_fits <- average_edge_counts %>%
+#   group_by(Trial) %>%
+#   mutate(
+#     log_area = log10(Area),
+#     log_count = log10(Average_Count),
+#     log_count = ifelse(log_count < 0, 0, log_count)
+#   ) %>%
+#   summarise(
+#     slope = coef(lm(log_count ~ log_area))[2],
+#     intercept = coef(lm(log_count ~ log_area))[1],
+#     .groups = "drop"
+#   ) %>%
+#   mutate(PCL = 10^(-intercept/slope))  # Calculate Product Cleanliness Level
+
+c_bmodel_edge_12 <- cumulative_edge_counts %>% 
+  filter( Trial == 12)
+
+# Calculate binned counts from cumulative data
+edge_binned <- cumulative_edge_counts %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Cumulative_Count[1], diff(Cumulative_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+
+c_bmodel_edge_12_binned <- edge_binned %>% 
+  filter( Trial == 12)
+
+
+## Witness Sample
+
+
+# Calculate normalization factors for edge measurements
+new_edge_factors<- Witsurface_before_data$summary_data %>%
+  group_by(Trial) %>%
+  summarise(
+    Total_Width = n() * 600 * 1e-6,  # Convert microns to meters
+    .groups = "drop"
+  )
+
+get_area_counts <- function(data, area_thresholds, normalization_factor) {
+  # Initialize counts vector
+  counts <- numeric(length(area_thresholds))
+  
+  # For bins except the last one
+  for(i in 1:(length(area_thresholds) - 1)) {
+    counts[i] <- sum(data$overhang_area >= area_thresholds[i] & 
+                    data$overhang_area < area_thresholds[i + 1]) * normalization_factor
+  }
+  
+  # For the last bin
+  counts[length(area_thresholds)] <- sum(data$overhang_area >= area_thresholds[length(area_thresholds)]) * normalization_factor
+  
+  # Return results in the same format as expected by the original code
+  tibble(
+    Area = area_thresholds,
+    Count = counts
+  )
+}
+
+# Calculate area-based counts for edge data using the same function as surface data
+edge_counts_before <- w_bmodel_edge_before %>%
+  group_by(Trial) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+edge_counts_after <- w_bmodel_edge_after %>%
+  group_by(Trial) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+surface_count_diff <- edge_counts_after %>%
+  full_join(edge_counts_before, 
+            by = c("Trial", "Area"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Positive_Diff = pmax(Count_Diff, 0))
+
+# Calculate cumulative counts (particles larger than each threshold)
+cumulative_edge_counts <- surface_count_diff %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum(Positive_Diff)) %>%
+  ungroup() %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Cumulative_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>% 
+  arrange(Trial, desc(Area)) 
+
+
+#  Future Use # Calculate best fit lines for edge data
+# edge_best_fits <- average_edge_counts %>%
+#   group_by(Trial) %>%
+#   mutate(
+#     log_area = log10(Area),
+#     log_count = log10(Average_Count),
+#     log_count = ifelse(log_count < 0, 0, log_count)
+#   ) %>%
+#   summarise(
+#     slope = coef(lm(log_count ~ log_area))[2],
+#     intercept = coef(lm(log_count ~ log_area))[1],
+#     .groups = "drop"
+#   ) %>%
+#   mutate(PCL = 10^(-intercept/slope))  # Calculate Product Cleanliness Level
+
+w_bmodel_edge_9 <- cumulative_edge_counts %>% 
+  filter( Trial == 9)
+
+w_bmodel_edge_10 <- cumulative_edge_counts %>% 
+  filter( Trial == 10)
+
+w_bmodel_edge_11 <- cumulative_edge_counts %>% 
+  filter( Trial == 11)
+
+w_bmodel_edge_12 <- cumulative_edge_counts %>% 
+  filter( Trial == 12)
+
+# Calculate binned counts from cumulative data
+edge_binned <- cumulative_edge_counts %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Cumulative_Count[1], diff(Cumulative_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+
+w_bmodel_edge_9_binned <- edge_binned %>% 
+  filter( Trial == 9)
+
+w_bmodel_edge_10_binned <- edge_binned %>% 
+  filter( Trial == 10)
+
+w_bmodel_edge_11_binned <- edge_binned %>% 
+  filter( Trial == 11)
+
+w_bmodel_edge_12_binned <- edge_binned %>% 
+  filter( Trial == 12)
+
+```
+
+## 8. Trial Anlysis
+
+### 8.1 Trial 9
+
+```{r trial_9 graphs}
+# Plot the cumulative distribution of Surface data
 ggplot() +
-  geom_line(data = average_model_binned, 
-            aes(x = log_area, y = log_count_bin, 
-                color = factor(Trial))) +
-  geom_line(data = overall_average_model_binned,
-            aes(x = log_area, y = log_count),
-            color = "black", size = 1.2) +
-  scale_color_manual(values = trial_colors, name = "Trial") +
+  geom_line(data = surface_9,
+            aes(x = log_area, y = log_count)) +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Surface Analysis 9: Cumulative Particle Area Distribution over 0.1 square meters"
+  ) +
+  custom_theme
+
+
+# Plot the binned distribution of surface data
+ggplot() +
+  geom_line(data = surface_9_binned, 
+            aes(x = log_area, y = log_count_bin)) +
   labs(
     x = expression(Area~"(square microns)"),
-    y = "Average Model Particle Count",
-    title = "Edge Model Analysis: Binned Particle Size Distribution",
-    subtitle = "Particles binned by area thresholds\nBlack line: overall average"
-  ) +
-  custom_theme +
-  theme(
-    panel.grid.minor = element_blank(),
-    legend.position = "bottom"
-  )
-
-```
-
-## 6. Combined Analysis and Comparison
-
-```{r combined_analysis, fig.width=10, fig.height=6}
-
-# Create a combined plot with observed data, edge model, and calibration data
-ggplot() +
-  # Observed data
-  geom_line(data = average_edge_counts, 
-            aes(x = log_area, y = log_count, 
-                color = factor(Trial)), 
-            linetype = line_types["Observed"]) +
-  # Edge model
-  geom_line(data = average_model_counts_cumulative,
-            aes(x = log_area, y = log_count, 
-                color = factor(Trial)),
-            linetype = line_types["Modeled"]) +
-  # Calibration data
-  geom_line(data = average_calibration_counts,
-            aes(x = log_area, y = log_count, 
-                color = factor(Trial)),
-            linetype = line_types["Calibration"]) +
-  scale_color_manual(values = trial_colors, name = "Trial") +
-  labs(
-    x = expression(log[10](Area)~"(microns)"),
     y = "log10(Particle Count)",
-    title = "Distribution of Particles by Trial",
-    subtitle = "Solid: Observed, Dashed: Edge Model, Dotted: Calibration"
-  ) +
-  custom_theme
+    title = "Surface Analysis 9: Binned Particle Size Distribution over 0.1 square meters") +
+  custom_theme 
 
 
-# Mean distribution plot
+# Plot the cumulative edge distributions
 ggplot() +
-  geom_line(data = overall_average_cumulative, 
-            aes(x = log_area, y = Average_Count),
-            color = trial_colors["6"]) +
-  geom_line(data = overall_average_model, 
-            aes(x = log_area, y = Average_Count),
-            color = trial_colors["8"]) +
-  geom_line(data = overall_average_calibration, 
-            aes(x = log_area, y = Average_Count),
-            color = trial_colors["9"]) +
-  # geom_line(data = comparison_mean_dist, 
-  #           aes(x = log10(Area), y = log10(Modeled_edge_with_adhesion_counts)),
-  #           color = trial_colors["8"], 
-  #           linetype = "dashed") +
-  # geom_line(data = comparison_mean_dist, 
-  #           aes(x = log10(Area), y = log10(Calibration_with_adhesion_counts)),
-  #           color = trial_colors["9"], 
-  #           linetype = "dashed") +
+  geom_line(data = edge_9,
+            aes(x = log_area, y = log_count),
+                color = "pink") +
+  geom_line(data = cw_edge_9,
+            aes(x = log_area, y = log_count),
+            color = "blue") +  
+  geom_line(data = model_edge_9,
+              aes(x = log_area, y = log_count),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_9,
+              aes(x = log_area, y = log_count),
+                  color = "orange") +
   labs(
-    x = expression(log[10](Area)~"(microns)"),
-    y = "log10(#) of Edge Particles >= Particle Area",
-    title = "Distribution of Particles by Model",
-    subtitle = "Red: Observed Edge Counts, Blue: Modeled Edge Counts, Green: Observed Calibration Counts"
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Analysis 9: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Starshade Observed, Blue: Calibration Obvserved, Green: Model, Orange: SLSM Starshade"
   ) +
   custom_theme
 
-
-## Comparison Ratios
-comparison_all_models <- overall_average_cumulative %>% 
-  full_join(overall_average_model, by = c("log_area")) %>% 
-  full_join(overall_average_calibration, by = c("log_area")) %>% 
-  mutate(
-    Observed_edge_counts = Average_Count.x,
-    Modeled_edge_counts = Average_Count.y,
-    Observed_Calibration_counts = Average_Count
-  ) %>% 
-  mutate(
-    Ratio = 1/(2*(sqrt(10^(log_area)/pi))),
-    Observed_by_Modeled = Observed_edge_counts/Modeled_edge_counts,
-    Observed_by_Calibration = Observed_edge_counts/Observed_Calibration_counts,
-    Modeled_by_Calibration = Modeled_edge_counts/Observed_Calibration_counts,
-    Calibration_by_Modeled = Observed_Calibration_counts/Modeled_edge_counts
-  ) 
-
-#Ratio comparison plot
+# Plot the binned edge distributions
 ggplot() +
-  geom_line(data = comparison_all_models,
-            aes(x = log_area, y = Observed_by_Modeled),
-            color = trial_colors["6"]) +
-  geom_line(data = comparison_all_models,
-            aes(x = log_area, y = Observed_by_Calibration),
-            color = trial_colors["8"]) +
-  geom_line(data = comparison_all_models,
-            aes(x = log_area, y = Ratio),
-            color = trial_colors["9"]) +
-  geom_line(data = comparison_all_models,
-            aes(x = log_area, y = Calibration_by_Modeled),
-            color = trial_colors["10"]) +
+  geom_line(data = edge_9_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "pink") +
+  geom_line(data = cw_edge_9_binned,
+            aes(x = log_area, y = log_count_bin),
+            color = "blue") +  
+  geom_line(data = model_edge_9_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_9_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "orange") +
   labs(
-    x = expression(log[10](Area)~"(microns)"),
-    y = "Ratio",
-    title = "Ratio of Particles per Experiment",
-    subtitle = "Red: Observed/Modeled, Blue: Observed/Calibration, Purple: Calibration/Modeled, n\ Green: Theoretical Ratio"
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Analysis 9: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Starshade Observed, Blue: Calibration Obvserved, Green: Model, Orange: SLSM Starshade"
   ) +
   custom_theme
 
+# Statistical Analysis of Edge Distribution Differences for Trial 9
 
-# Define line types for different data sources
-line_types <- c(
-  "Observed" = "solid",
-  "Modeled" = "dashed",
-  "Calibration" = "dotted"
+# First, prepare the data by creating a long format dataset for comparison
+s_bmodel_edge_9l <- s_bmodel_edge_9[c("Trial","Area","Cumulative_Count","log_area", "log_count")] %>% mutate(source = "SLSM Starshade",Average_Count = Cumulative_Count, Trial = as.numeric(Trial))
+# Combine the datasets with source identifiers
+trial9_combined_edges <- bind_rows(
+  edge_9 %>% mutate(source = "Starshade Observed"),
+  cw_edge_9 %>% mutate(source = "Calibration Observed"),
+  model_edge_9 %>% mutate(source = "Model"),
+  s_bmodel_edge_9l[c("Trial","Area","Average_Count","log_area", "log_count", "source")]
+) %>%
+  filter(!is.na(log_count) & !is.infinite(log_count)) # Remove invalid values
+
+# renamed because 
+resampled_data <- trial9_combined_edges
+
+# 1. Calculate correlation coefficients between different distributions
+correlation_results <- data.frame(
+  comparison = character(),
+  pearson_r = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
 )
 
-# Create a combined plot with all binned data
-ggplot() +
-  # Observed edge data
-  geom_line(data = edge_binned, 
-            aes(x = log_area, y = log_count_bin, 
-                color = factor(Trial)), 
-            linetype = line_types["Observed"]) +
-  # Edge model data
-  geom_line(data = average_model_binned,
-            aes(x = log_area, y = log_count_bin, 
-                color = factor(Trial)),
-            linetype = line_types["Modeled"]) +
-  # Calibration data
-  geom_line(data = average_calibration_binned,
-            aes(x = log_area, y = log_count_bin, 
-                color = factor(Trial)),
-            linetype = line_types["Calibration"]) +
-  scale_color_manual(values = trial_colors, name = "Trial") +
-  labs(
-    x = expression(log[10](Area)~"(microns)"),
-    y = "log10(Particle Count)",
-    title = "Binned Distribution of Particles by Trial",
-    subtitle = "Solid: Observed Edge, Dashed: Edge Model, Dotted: Calibration"
-  ) +
-  custom_theme
+# Get unique sources
+sources <- unique(resampled_data$source)
 
-# Create mean distribution plot for binned data
-ggplot() +
-  geom_line(data = overall_average_binned, 
-            aes(x = log_area, y = log_count),
-            color = trial_colors["6"]) +
-  geom_line(data = overall_average_model_binned, 
-            aes(x = log_area, y = log_count),
-            color = trial_colors["8"]) +
-  geom_line(data = overall_average_calibration_binned, 
-            aes(x =log_area, y = log_count),
-            color = trial_colors["9"]) +
-  # geom_line(data = binned_mean_dist, 
-  #           aes(x = log10(Area), y = log10(Modeled_edge_with_adhesion_counts)),
-  #           color = trial_colors["8"], 
-  #           linetype = "dashed") +
-  # geom_line(data = binned_mean_dist, 
-  #           aes(x = log10(Area), y = log10(Calibration_with_adhesion_counts)),
-  #           color = trial_colors["9"], 
-  #           linetype = "dashed") +
-  labs(
-    x = expression(log[10](Area)~"(microns)"),
-    y = "log10(Particle Count)",
-    title = "Binned Distribution of Particles by Model",
-    subtitle = "Red: Observed Edge, Blue: Modeled Edge, Green: Calibration"
-  ) +
-  custom_theme
+# Calculate correlations for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get log_count values for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    # Skip if lengths don't match or insufficient data
+    if (length(data1) != length(data2) || length(data1) < 3) next
+    
+    # Calculate correlation
+    cor_test <- cor.test(data1, data2)
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      pearson_r = cor_test$estimate,
+      p_value = cor_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
 
-# Calculate ratios for binned data
-binned_ratios <- overall_average_binned %>% 
-  full_join(overall_average_model_binned, by = c("log_area","Area"), suffix = c("_edge", "_model")) %>% 
-  full_join(overall_average_calibration_binned, by = c("log_area","Area")) %>% 
-  mutate(
-    Ratio = 1/(2*(sqrt(10^(log_area)/pi))),
-    Observed_by_Modeled = log_count_edge/log_count_model,
-    Observed_by_Calibration = log_count_edge/log_count,
-    Modeled_by_Calibration = log_count_model/log_count,
-    Calibration_by_Modeled = log_count/log_count_model
-  ) 
+# 2. Perform Kolmogorov-Smirnov tests
+ks_results <- data.frame(
+  comparison = character(),
+  ks_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
 
-# Create ratio plot for binned data
-ggplot() +
-  geom_line(data = binned_ratios,
-            aes(x = log_area, y = log10(Observed_by_Modeled)),
-            color = trial_colors["6"]) +
-  geom_line(data = binned_ratios,
-            aes(x = log_area, y = log10(Observed_by_Calibration)),
-            color = trial_colors["8"]) +
-  geom_line(data = binned_ratios,
-            aes(x = log_area, y = log10(Ratio)),
-            color = trial_colors["9"]) +
-  geom_line(data = binned_ratios,
-            aes(x = log_area, y = log10(Calibration_by_Modeled)),
-            color = trial_colors["10"]) +
-  labs(
-    x = expression(log[10](Area)~"(microns)"),
-    y = "Ratio",
-    title = "Ratio of Binned Particles per Experiment",
-    subtitle = "Red: Observed/Modeled, Blue: Observed/Calibration, Purple: Calibration/Modeled, n\ Green: Theoretical Ratio"
-  ) +
-  custom_theme
+# Perform KS test for each pair of sources
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    data1 <- resampled_data$log_count[resampled_data$source == source1]
+    data2 <- resampled_data$log_count[resampled_data$source == source2]
+    
+    # Skip if either dataset has insufficient data
+    if (length(data1) < 2 || length(data2) < 2) next
+    
+    # Perform KS test
+    ks_test <- ks.test(data1, data2)
+    
+    # Store results
+    ks_results <- rbind(ks_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      ks_statistic = ks_test$statistic,
+      p_value = ks_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate distances between distributions
+# We'll use Root Mean Square Error (RMSE) as a measure of distance
+rmse_results <- data.frame(
+  comparison = character(),
+  rmse = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Calculate RMSE for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get data points for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area)
+    
+    # Skip if lengths don't match or insufficient data
+    if (nrow(data1) != nrow(data2) || nrow(data1) < 3) next
+    
+    # Calculate RMSE
+    rmse <- sqrt(mean((data1$log_count - data2$log_count)^2, na.rm = TRUE))
+    
+    # Store results
+    rmse_results <- rbind(rmse_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      rmse = rmse,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 4. Perform regression analysis
+regression_results <- data.frame(
+  source = character(),
+  slope = numeric(),
+  intercept = numeric(),
+  r_squared = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# For each source, fit a linear model
+for (source_name in sources) {
+  source_data <- resampled_data %>% 
+    filter(source == source_name) %>%
+    filter(!is.na(log_count) & !is.na(log_area))
+  
+  # Only perform regression if we have sufficient data
+  if (nrow(source_data) >= 3) {
+    # Fit linear model
+    lm_fit <- lm(log_count ~ log_area, data = source_data)
+    lm_summary <- summary(lm_fit)
+    
+    # Store results
+    regression_results <- rbind(regression_results, data.frame(
+      source = source_name,
+      slope = coef(lm_fit)[2],
+      intercept = coef(lm_fit)[1],
+      r_squared = lm_summary$r.squared,
+      p_value = lm_summary$coefficients[2, 4],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate overall distribution summary statistics
+dist_summary <- resampled_data %>%
+  group_by(source) %>%
+  summarize(
+    mean_log_count = mean(log_count, na.rm = TRUE),
+    median_log_count = median(log_count, na.rm = TRUE),
+    sd_log_count = sd(log_count, na.rm = TRUE),
+    min_log_count = min(log_count, na.rm = TRUE),
+    max_log_count = max(log_count, na.rm = TRUE)
+  )
+
+# 4. Perform area under curve analysis
+auc_data <- resampled_data %>%
+  group_by(source) %>%
+  arrange(log_area) %>%
+  summarize(
+    auc = sum(diff(c(first(log_area), log_area)) * (c(first(log_count), head(log_count, -1)) + log_count)/2, na.rm = TRUE)
+  )
+
+
+# Print results
+cat("Trial 9 Edge Distribution Analysis Results\n")
+cat("\n1. Correlation Analysis:\n")
+print(correlation_results)
+
+cat("\n2. Kolmogorov-Smirnov Test Results:\n")
+print(ks_results)
+
+cat("\n3. Root Mean Square Error Between Distributions:\n")
+print(rmse_results)
+
+cat("\n4. Regression Analysis for Each Distribution:\n")
+print(regression_results)
+
+print("\n5. Area Under Curve Analysis:\n")
+print(auc_data)
+
+print("\n6. Distribution Summary Statistics:\n")
+print(dist_summary)
 
 
 ```
 
+### 8.2 Trial 10
 
-## 7. Paper Comparisons
+```{r trial_10 graphs}
+# Plot the cumulative distribution of Surface data
+ggplot() +
+  geom_line(data = surface_10,
+            aes(x = log_area, y = log_count)) +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Surface Analysis 10: Cumulative Particle Area Distribution over 0.1 square meters"
+  ) +
+  custom_theme
 
 
-```{r comparison graphs}
-# Calculate surface binned fit
+# Plot the binned distribution of surface data
+ggplot() +
+  geom_line(data = surface_10_binned, 
+            aes(x = log_area, y = log_count_bin)) +
+  labs(
+    x = expression(Area~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Surface Analysis 10: Binned Particle Size Distribution over 0.1 square meters") +
+  custom_theme 
+
+
+# Plot the cumulative edge distributions
+ggplot() +
+  geom_line(data = edge_10,
+            aes(x = log_area, y = log_count),
+                color = "pink") +
+  geom_line(data = cw_edge_10,
+            aes(x = log_area, y = log_count),
+            color = "blue") +  
+  geom_line(data = model_edge_10,
+              aes(x = log_area, y = log_count),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_10,
+              aes(x = log_area, y = log_count),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Analysis 10: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Starshade Observed, Blue: Calibration Obvserved, Green: Model, Orange: SLSM Starshade"
+  ) +
+  custom_theme
+
+# Plot the binned edge distributions
+ggplot() +
+  geom_line(data = edge_10_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "pink") +
+  geom_line(data = cw_edge_10_binned,
+            aes(x = log_area, y = log_count_bin),
+            color = "blue") +  
+  geom_line(data = model_edge_10_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_10_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Analysis 10: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Starshade Observed, Blue: Calibration Obvserved, Green: Model, Orange: SLSM Starshade"
+  ) +
+  custom_theme
+
+
+
+# Statistical Analysis of Edge Distribution Differences for Trial 9
+
+# First, prepare the data by creating a long format dataset for comparison
+s_bmodel_edge_10 <- s_bmodel_edge_10[c("Trial","Area","Cumulative_Count","log_area", "log_count")] %>% mutate(source = "SLSM Starshade",Average_Count = Cumulative_Count, Trial = as.numeric(Trial))
+# Combine the datasets with source identifiers
+trial10_combined_edges <- bind_rows(
+  edge_10 %>% mutate(source = "Starshade Observed"),
+  cw_edge_10 %>% mutate(source = "Calibration Observed"),
+  model_edge_10 %>% mutate(source = "Model"),
+  s_bmodel_edge_10[c("Trial","Area","Average_Count","log_area", "log_count", "source")]
+) %>%
+  filter(!is.na(log_count) & !is.infinite(log_count)) # Remove invalid values
+
+# renamed because 
+resampled_data <- trial10_combined_edges
+
+
+# 1. Calculate correlation coefficients between different distributions
+correlation_results <- data.frame(
+  comparison = character(),
+  pearson_r = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Get unique sources
+sources <- unique(resampled_data$source)
+
+# Calculate correlations for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get log_count values for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    # Skip if lengths don't match or insufficient data
+    if (length(data1) != length(data2) || length(data1) < 3) next
+    
+    # Calculate correlation
+    cor_test <- cor.test(data1, data2)
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      pearson_r = cor_test$estimate,
+      p_value = cor_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 2. Perform Kolmogorov-Smirnov tests
+ks_results <- data.frame(
+  comparison = character(),
+  ks_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Perform KS test for each pair of sources
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    data1 <- resampled_data$log_count[resampled_data$source == source1]
+    data2 <- resampled_data$log_count[resampled_data$source == source2]
+    
+    # Skip if either dataset has insufficient data
+    if (length(data1) < 2 || length(data2) < 2) next
+    
+    # Perform KS test
+    ks_test <- ks.test(data1, data2)
+    
+    # Store results
+    ks_results <- rbind(ks_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      ks_statistic = ks_test$statistic,
+      p_value = ks_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate distances between distributions
+# We'll use Root Mean Square Error (RMSE) as a measure of distance
+rmse_results <- data.frame(
+  comparison = character(),
+  rmse = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Calculate RMSE for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get data points for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area)
+    
+    # Skip if lengths don't match or insufficient data
+    if (nrow(data1) != nrow(data2) || nrow(data1) < 3) next
+    
+    # Calculate RMSE
+    rmse <- sqrt(mean((data1$log_count - data2$log_count)^2, na.rm = TRUE))
+    
+    # Store results
+    rmse_results <- rbind(rmse_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      rmse = rmse,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 4. Perform regression analysis
+regression_results <- data.frame(
+  source = character(),
+  slope = numeric(),
+  intercept = numeric(),
+  r_squared = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# For each source, fit a linear model
+for (source_name in sources) {
+  source_data <- resampled_data %>% 
+    filter(source == source_name) %>%
+    filter(!is.na(log_count) & !is.na(log_area))
+  
+  # Only perform regression if we have sufficient data
+  if (nrow(source_data) >= 3) {
+    # Fit linear model
+    lm_fit <- lm(log_count ~ log_area, data = source_data)
+    lm_summary <- summary(lm_fit)
+    
+    # Store results
+    regression_results <- rbind(regression_results, data.frame(
+      source = source_name,
+      slope = coef(lm_fit)[2],
+      intercept = coef(lm_fit)[1],
+      r_squared = lm_summary$r.squared,
+      p_value = lm_summary$coefficients[2, 4],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate overall distribution summary statistics
+dist_summary <- resampled_data %>%
+  group_by(source) %>%
+  summarize(
+    mean_log_count = mean(log_count, na.rm = TRUE),
+    median_log_count = median(log_count, na.rm = TRUE),
+    sd_log_count = sd(log_count, na.rm = TRUE),
+    min_log_count = min(log_count, na.rm = TRUE),
+    max_log_count = max(log_count, na.rm = TRUE)
+  )
+
+# 4. Perform area under curve analysis
+auc_data <- resampled_data %>%
+  group_by(source) %>%
+  arrange(log_area) %>%
+  summarize(
+    auc = sum(diff(c(first(log_area), log_area)) * (c(first(log_count), head(log_count, -1)) + log_count)/2, na.rm = TRUE)
+  )
+
+
+# Print results
+cat("Trial 10 Edge Distribution Analysis Results\n")
+cat("\n1. Correlation Analysis:\n")
+print(correlation_results)
+
+cat("\n2. Kolmogorov-Smirnov Test Results:\n")
+print(ks_results)
+
+cat("\n3. Root Mean Square Error Between Distributions:\n")
+print(rmse_results)
+
+cat("\n4. Regression Analysis for Each Distribution:\n")
+print(regression_results)
+
+print("\n5. Area Under Curve Analysis:\n")
+print(auc_data)
+
+print("\n6. Distribution Summary Statistics:\n")
+print(dist_summary)
+
+```
+
+### 8.3 Trial 11
+
+```{r trial_11 graphs}
+# Plot the cumulative distribution of Surface data
+ggplot() +
+  geom_line(data = surface_11,
+            aes(x = log_area, y = log_count)) +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Surface Analysis 11: Cumulative Particle Area Distribution over 0.1 square meters"
+  ) +
+  custom_theme
+
+
+# Plot the binned distribution of surface data
+ggplot() +
+  geom_line(data = surface_11_binned, 
+            aes(x = log_area, y = log_count_bin)) +
+  labs(
+    x = expression(Area~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Surface Analysis 11: Binned Particle Size Distribution over 0.1 square meters") +
+  custom_theme 
+
+
+# Plot the cumulative edge distributions
+ggplot() +
+  geom_line(data = edge_11,
+            aes(x = log_area, y = log_count),
+                color = "pink") +
+  geom_line(data = cw_edge_11,
+            aes(x = log_area, y = log_count),
+            color = "blue") +  
+  geom_line(data = model_edge_11,
+              aes(x = log_area, y = log_count),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_11,
+              aes(x = log_area, y = log_count),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Analysis 11: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Starshade Observed, Blue: Calibration Obvserved, Green: Model, Orange: SLSM Starshade"
+  ) +
+  custom_theme
+
+# Plot the binned edge distributions
+ggplot() +
+  geom_line(data = edge_11_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "pink") +
+  geom_line(data = cw_edge_11_binned,
+            aes(x = log_area, y = log_count_bin),
+            color = "blue") +  
+  geom_line(data = model_edge_11_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_11_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Analysis 11: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Starshade Observed, Blue: Calibration Obvserved, Green: Model, Orange: SLSM Starshade"
+  ) +
+  custom_theme
+
+# Statistical Analysis of Edge Distribution Differences for Trial 9
+
+# First, prepare the data by creating a long format dataset for comparison
+s_bmodel_edge_11 <- s_bmodel_edge_11[c("Trial","Area","Cumulative_Count","log_area", "log_count")] %>% mutate(source = "SLSM Starshade",Average_Count = Cumulative_Count, Trial = as.numeric(Trial))
+# Combine the datasets with source identifiers
+trial11_combined_edges <- bind_rows(
+  edge_11 %>% mutate(source = "Starshade Observed"),
+  cw_edge_11 %>% mutate(source = "Calibration Observed"),
+  model_edge_11 %>% mutate(source = "Model"),
+  s_bmodel_edge_11[c("Trial","Area","Average_Count","log_area", "log_count", "source")]
+) %>%
+  filter(!is.na(log_count) & !is.infinite(log_count)) # Remove invalid values
+
+# renamed because 
+resampled_data <- trial11_combined_edges
+
+
+# 1. Calculate correlation coefficients between different distributions
+correlation_results <- data.frame(
+  comparison = character(),
+  pearson_r = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Get unique sources
+sources <- unique(resampled_data$source)
+
+# Calculate correlations for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get log_count values for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    # Skip if lengths don't match or insufficient data
+    if (length(data1) != length(data2) || length(data1) < 3) next
+    
+    # Calculate correlation
+    cor_test <- cor.test(data1, data2)
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      pearson_r = cor_test$estimate,
+      p_value = cor_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 2. Perform Kolmogorov-Smirnov tests
+ks_results <- data.frame(
+  comparison = character(),
+  ks_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Perform KS test for each pair of sources
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    data1 <- resampled_data$log_count[resampled_data$source == source1]
+    data2 <- resampled_data$log_count[resampled_data$source == source2]
+    
+    # Skip if either dataset has insufficient data
+    if (length(data1) < 2 || length(data2) < 2) next
+    
+    # Perform KS test
+    ks_test <- ks.test(data1, data2)
+    
+    # Store results
+    ks_results <- rbind(ks_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      ks_statistic = ks_test$statistic,
+      p_value = ks_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate distances between distributions
+# We'll use Root Mean Square Error (RMSE) as a measure of distance
+rmse_results <- data.frame(
+  comparison = character(),
+  rmse = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Calculate RMSE for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get data points for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area)
+    
+    # Skip if lengths don't match or insufficient data
+    if (nrow(data1) != nrow(data2) || nrow(data1) < 3) next
+    
+    # Calculate RMSE
+    rmse <- sqrt(mean((data1$log_count - data2$log_count)^2, na.rm = TRUE))
+    
+    # Store results
+    rmse_results <- rbind(rmse_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      rmse = rmse,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 4. Perform regression analysis
+regression_results <- data.frame(
+  source = character(),
+  slope = numeric(),
+  intercept = numeric(),
+  r_squared = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# For each source, fit a linear model
+for (source_name in sources) {
+  source_data <- resampled_data %>% 
+    filter(source == source_name) %>%
+    filter(!is.na(log_count) & !is.na(log_area))
+  
+  # Only perform regression if we have sufficient data
+  if (nrow(source_data) >= 3) {
+    # Fit linear model
+    lm_fit <- lm(log_count ~ log_area, data = source_data)
+    lm_summary <- summary(lm_fit)
+    
+    # Store results
+    regression_results <- rbind(regression_results, data.frame(
+      source = source_name,
+      slope = coef(lm_fit)[2],
+      intercept = coef(lm_fit)[1],
+      r_squared = lm_summary$r.squared,
+      p_value = lm_summary$coefficients[2, 4],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate overall distribution summary statistics
+dist_summary <- resampled_data %>%
+  group_by(source) %>%
+  summarize(
+    mean_log_count = mean(log_count, na.rm = TRUE),
+    median_log_count = median(log_count, na.rm = TRUE),
+    sd_log_count = sd(log_count, na.rm = TRUE),
+    min_log_count = min(log_count, na.rm = TRUE),
+    max_log_count = max(log_count, na.rm = TRUE)
+  )
+
+# 4. Perform area under curve analysis
+auc_data <- resampled_data %>%
+  group_by(source) %>%
+  arrange(log_area) %>%
+  summarize(
+    auc = sum(diff(c(first(log_area), log_area)) * (c(first(log_count), head(log_count, -1)) + log_count)/2, na.rm = TRUE)
+  )
+
+
+# Print results
+cat("Trial 11 Edge Distribution Analysis Results\n")
+cat("\n1. Correlation Analysis:\n")
+print(correlation_results)
+
+cat("\n2. Kolmogorov-Smirnov Test Results:\n")
+print(ks_results)
+
+cat("\n3. Root Mean Square Error Between Distributions:\n")
+print(rmse_results)
+
+cat("\n4. Regression Analysis for Each Distribution:\n")
+print(regression_results)
+
+print("\n5. Area Under Curve Analysis:\n")
+print(auc_data)
+
+print("\n6. Distribution Summary Statistics:\n")
+print(dist_summary)
+
+```
+
+### 8.4 Trial 12
+
+```{r trial_12 graphs}
+# Plot the cumulative distribution of Surface data
+ggplot() +
+  geom_line(data = surface_12,
+            aes(x = log_area, y = log_count),
+                color = "orange") +
+    geom_line(data = cw_surface_12,
+            aes(x = log_area, y = log_count),
+                color = "purple") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Surface Analysis 12: Cumulative Particle Area Distribution over 0.1 square meters",
+    subtitle = "Orange: Starshade Surface, Purple: Calibration Surface") +
+  custom_theme
+
+
+# Plot the binned distribution of surface data
+ggplot() +
+  geom_line(data = surface_12_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "orange") +
+    geom_line(data = cw_surface_12_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "purple") +
+  labs(
+    x = expression(Area~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Surface Analysis 12: Binned Particle Size Distribution over 0.1 square meters",
+    subtitle = "Orange: Starshade Surface, Purple: Calibration Surface") +
+  custom_theme 
+
+
+# Plot the cumulative edge distributions
+ggplot() +
+  geom_line(data = edge_12,
+            aes(x = log_area, y = log_count),
+                color = "pink") +
+  geom_line(data = cw_edge_12,
+            aes(x = log_area, y = log_count),
+            color = "blue") +  
+  geom_line(data = model_edge_12,
+              aes(x = log_area, y = log_count),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_12,
+              aes(x = log_area, y = log_count),
+                  color = "orange") +
+      geom_line(data = c_bmodel_edge_12,
+              aes(x = log_area, y = log_count),
+                  color = "purple") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Analysis 12: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Starshade Observed, Blue: Calibration Obvserved, Green: Model,\n Orange: SLSM Starshade, Purple: SLSM Calibration"
+  ) +
+  custom_theme
+
+# Plot the binned edge distributions
+ggplot() +
+  geom_line(data = edge_12_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "pink") +
+  geom_line(data = cw_edge_12_binned,
+            aes(x = log_area, y = log_count_bin),
+            color = "blue") +  
+  geom_line(data = model_edge_12_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_12_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "orange") +
+        geom_line(data = c_bmodel_edge_12_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "purple") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Edge Analysis 12: Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Starshade Observed, Blue: Calibration Obvserved, Green: Model,\n Orange: SLSM Starshade, Purple: SLSM Calibration"
+  ) +
+  custom_theme
+
+# Statistical Analysis of Edge Distribution Differences for Trial 12
+
+# First, prepare the data by creating a long format dataset for comparison
+s_bmodel_edge_12 <- s_bmodel_edge_12[c("Trial","Area","Cumulative_Count","log_area", "log_count")] %>% mutate(source = "SLSM Starshade",Average_Count = Cumulative_Count, Trial = as.numeric(Trial))
+# Combine the datasets with source identifiers
+trial12_combined_edges <- bind_rows(
+  edge_12 %>% mutate(source = "Starshade Observed"),
+  cw_edge_12 %>% mutate(source = "Calibration Observed"),
+  model_edge_12 %>% mutate(source = "Model"),
+  s_bmodel_edge_12[c("Trial","Area","Average_Count","log_area", "log_count", "source")]
+) %>%
+  filter(!is.na(log_count) & !is.infinite(log_count)) # Remove invalid values
+
+# renamed because 
+resampled_data <- trial12_combined_edges
+
+
+# 1. Calculate correlation coefficients between different distributions
+correlation_results <- data.frame(
+  comparison = character(),
+  pearson_r = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Get unique sources
+sources <- unique(resampled_data$source)
+
+# Calculate correlations for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get log_count values for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    # Skip if lengths don't match or insufficient data
+    if (length(data1) != length(data2) || length(data1) < 3) next
+    
+    # Calculate correlation
+    cor_test <- cor.test(data1, data2)
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      pearson_r = cor_test$estimate,
+      p_value = cor_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 2. Perform Kolmogorov-Smirnov tests
+ks_results <- data.frame(
+  comparison = character(),
+  ks_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Perform KS test for each pair of sources
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    data1 <- resampled_data$log_count[resampled_data$source == source1]
+    data2 <- resampled_data$log_count[resampled_data$source == source2]
+    
+    # Skip if either dataset has insufficient data
+    if (length(data1) < 2 || length(data2) < 2) next
+    
+    # Perform KS test
+    ks_test <- ks.test(data1, data2)
+    
+    # Store results
+    ks_results <- rbind(ks_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      ks_statistic = ks_test$statistic,
+      p_value = ks_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate distances between distributions
+# We'll use Root Mean Square Error (RMSE) as a measure of distance
+rmse_results <- data.frame(
+  comparison = character(),
+  rmse = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Calculate RMSE for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get data points for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area)
+    
+    # Skip if lengths don't match or insufficient data
+    if (nrow(data1) != nrow(data2) || nrow(data1) < 3) next
+    
+    # Calculate RMSE
+    rmse <- sqrt(mean((data1$log_count - data2$log_count)^2, na.rm = TRUE))
+    
+    # Store results
+    rmse_results <- rbind(rmse_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      rmse = rmse,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 4. Perform regression analysis
+regression_results <- data.frame(
+  source = character(),
+  slope = numeric(),
+  intercept = numeric(),
+  r_squared = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# For each source, fit a linear model
+for (source_name in sources) {
+  source_data <- resampled_data %>% 
+    filter(source == source_name) %>%
+    filter(!is.na(log_count) & !is.na(log_area))
+  
+  # Only perform regression if we have sufficient data
+  if (nrow(source_data) >= 3) {
+    # Fit linear model
+    lm_fit <- lm(log_count ~ log_area, data = source_data)
+    lm_summary <- summary(lm_fit)
+    
+    # Store results
+    regression_results <- rbind(regression_results, data.frame(
+      source = source_name,
+      slope = coef(lm_fit)[2],
+      intercept = coef(lm_fit)[1],
+      r_squared = lm_summary$r.squared,
+      p_value = lm_summary$coefficients[2, 4],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate overall distribution summary statistics
+dist_summary <- resampled_data %>%
+  group_by(source) %>%
+  summarize(
+    mean_log_count = mean(log_count, na.rm = TRUE),
+    median_log_count = median(log_count, na.rm = TRUE),
+    sd_log_count = sd(log_count, na.rm = TRUE),
+    min_log_count = min(log_count, na.rm = TRUE),
+    max_log_count = max(log_count, na.rm = TRUE)
+  )
+
+# 4. Perform area under curve analysis
+auc_data <- resampled_data %>%
+  group_by(source) %>%
+  arrange(log_area) %>%
+  summarize(
+    auc = sum(diff(c(first(log_area), log_area)) * (c(first(log_count), head(log_count, -1)) + log_count)/2, na.rm = TRUE)
+  )
+
+
+# Print results
+cat("Trial 12 Edge Distribution Analysis Results\n")
+cat("\n1. Correlation Analysis:\n")
+print(correlation_results)
+
+cat("\n2. Kolmogorov-Smirnov Test Results:\n")
+print(ks_results)
+
+cat("\n3. Root Mean Square Error Between Distributions:\n")
+print(rmse_results)
+
+cat("\n4. Regression Analysis for Each Distribution:\n")
+print(regression_results)
+
+print("\n5. Area Under Curve Analysis:\n")
+print(auc_data)
+
+print("\n6. Distribution Summary Statistics:\n")
+print(dist_summary)
+
+# Statistical Analysis of Edge Distribution Differences for Trial 9
+
+# First, prepare the data by creating a long format dataset for comparison
+# Combine the datasets with source identifiers
+trial12_combined_surfaces <- bind_rows(
+  surface_12 %>% mutate(source = "Starshade Observed"),
+  cw_surface_12 %>% mutate(source = "Calibration Observed")) %>%
+  filter(!is.na(log_count) & !is.infinite(log_count)) # Remove invalid values
+
+# renamed because 
+resampled_data <- trial12_combined_surfaces
+
+
+# 1. Calculate correlation coefficients between different distributions
+correlation_results <- data.frame(
+  comparison = character(),
+  pearson_r = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Get unique sources
+sources <- unique(resampled_data$source)
+
+# Calculate correlations for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get log_count values for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    # Skip if lengths don't match or insufficient data
+    if (length(data1) != length(data2) || length(data1) < 3) next
+    
+    # Calculate correlation
+    cor_test <- cor.test(data1, data2)
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      pearson_r = cor_test$estimate,
+      p_value = cor_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 2. Perform Kolmogorov-Smirnov tests
+ks_results <- data.frame(
+  comparison = character(),
+  ks_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Perform KS test for each pair of sources
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    data1 <- resampled_data$log_count[resampled_data$source == source1]
+    data2 <- resampled_data$log_count[resampled_data$source == source2]
+    
+    # Skip if either dataset has insufficient data
+    if (length(data1) < 2 || length(data2) < 2) next
+    
+    # Perform KS test
+    ks_test <- ks.test(data1, data2)
+    
+    # Store results
+    ks_results <- rbind(ks_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      ks_statistic = ks_test$statistic,
+      p_value = ks_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate distances between distributions
+# We'll use Root Mean Square Error (RMSE) as a measure of distance
+rmse_results <- data.frame(
+  comparison = character(),
+  rmse = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Calculate RMSE for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get data points for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area)
+    
+    # Skip if lengths don't match or insufficient data
+    if (nrow(data1) != nrow(data2) || nrow(data1) < 3) next
+    
+    # Calculate RMSE
+    rmse <- sqrt(mean((data1$log_count - data2$log_count)^2, na.rm = TRUE))
+    
+    # Store results
+    rmse_results <- rbind(rmse_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      rmse = rmse,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 4. Perform regression analysis
+regression_results <- data.frame(
+  source = character(),
+  slope = numeric(),
+  intercept = numeric(),
+  r_squared = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# For each source, fit a linear model
+for (source_name in sources) {
+  source_data <- resampled_data %>% 
+    filter(source == source_name) %>%
+    filter(!is.na(log_count) & !is.na(log_area))
+  
+  # Only perform regression if we have sufficient data
+  if (nrow(source_data) >= 3) {
+    # Fit linear model
+    lm_fit <- lm(log_count ~ log_area, data = source_data)
+    lm_summary <- summary(lm_fit)
+    
+    # Store results
+    regression_results <- rbind(regression_results, data.frame(
+      source = source_name,
+      slope = coef(lm_fit)[2],
+      intercept = coef(lm_fit)[1],
+      r_squared = lm_summary$r.squared,
+      p_value = lm_summary$coefficients[2, 4],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate overall distribution summary statistics
+dist_summary <- resampled_data %>%
+  group_by(source) %>%
+  summarize(
+    mean_log_count = mean(log_count, na.rm = TRUE),
+    median_log_count = median(log_count, na.rm = TRUE),
+    sd_log_count = sd(log_count, na.rm = TRUE),
+    min_log_count = min(log_count, na.rm = TRUE),
+    max_log_count = max(log_count, na.rm = TRUE)
+  )
+
+# 4. Perform area under curve analysis
+auc_data <- resampled_data %>%
+  group_by(source) %>%
+  arrange(log_area) %>%
+  summarize(
+    auc = sum(diff(c(first(log_area), log_area)) * (c(first(log_count), head(log_count, -1)) + log_count)/2, na.rm = TRUE)
+  )
+
+
+# Print results
+cat("Trial 12 Surface Distribution Analysis Results\n")
+cat("\n1. Correlation Analysis:\n")
+print(correlation_results)
+
+cat("\n2. Kolmogorov-Smirnov Test Results:\n")
+print(ks_results)
+
+cat("\n3. Root Mean Square Error Between Distributions:\n")
+print(rmse_results)
+
+cat("\n4. Regression Analysis for Each Distribution:\n")
+print(regression_results)
+
+print("\n5. Area Under Curve Analysis:\n")
+print(auc_data)
+
+print("\n6. Distribution Summary Statistics:\n")
+print(dist_summary)
+
+```
+
+
+
+## 9. Combined Analysis and Comparison
+<!-- This section combines and compares all analyses to validate the edge contamination model -->
+
+### 9.1 Cumulative Comparison
+
+```{r combined_cumulative graphs}
+# Plot the cumulative distribution of Surface data
+ggplot() +
+  geom_line(data = surface_9,
+            aes(x = log_area, y = log_count),
+                color = "pink") +
+  geom_line(data = surface_10,
+            aes(x = log_area, y = log_count),
+            color = "blue") +  
+  geom_line(data = surface_11,
+              aes(x = log_area, y = log_count),
+                  color = "green") +
+    geom_line(data = surface_12,
+              aes(x = log_area, y = log_count),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Starshade Surface Analysis: Cumulative Particle Area Distribution over 0.1 square meters",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+
+# Plot the cumulative starshade edge distributions
+ggplot() +
+  geom_line(data = edge_9,
+            aes(x = log_area, y = log_count),
+                color = "pink") +
+  geom_line(data = edge_10,
+            aes(x = log_area, y = log_count),
+            color = "blue") +  
+  geom_line(data = edge_11,
+              aes(x = log_area, y = log_count),
+                  color = "green") +
+    geom_line(data = edge_12,
+              aes(x = log_area, y = log_count),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Starshade Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+# Plot the cumulative calibration edge distributions
+ggplot() +
+  geom_line(data = cw_edge_9,
+            aes(x = log_area, y = log_count),
+                color = "pink") +
+  geom_line(data = cw_edge_10,
+            aes(x = log_area, y = log_count),
+            color = "blue") +  
+  geom_line(data = cw_edge_11,
+              aes(x = log_area, y = log_count),
+                  color = "green") +
+    geom_line(data = cw_edge_12,
+              aes(x = log_area, y = log_count),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Calibration Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+# Plot the cumulative model edge distributions
+ggplot() +
+  geom_line(data = model_edge_9,
+            aes(x = log_area, y = log_count),
+                color = "pink") +
+  geom_line(data = model_edge_10,
+            aes(x = log_area, y = log_count),
+            color = "blue") +  
+  geom_line(data = model_edge_11,
+              aes(x = log_area, y = log_count),
+                  color = "green") +
+    geom_line(data = model_edge_12,
+              aes(x = log_area, y = log_count),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Model Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+# Plot the cumulative starshade edge distributions
+ggplot() +
+  geom_line(data = s_bmodel_edge_9,
+            aes(x = log_area, y = log_count),
+                color = "pink") +
+  geom_line(data = s_bmodel_edge_10,
+            aes(x = log_area, y = log_count),
+            color = "blue") +  
+  geom_line(data = s_bmodel_edge_11,
+              aes(x = log_area, y = log_count),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_12,
+              aes(x = log_area, y = log_count),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "SLSM Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+
+# Statistical Analysis of Edge Distribution Differences for Trial 12
+
+# First, prepare the data by creating a long format dataset for comparison
+
+# Combine the datasets with source identifiers
+all_surface_data <- bind_rows(
+  surface_9 %>% mutate(source = "Trial 9"),
+  surface_10 %>% mutate(source = "Trial 10"),
+  surface_11 %>% mutate(source = "Trial 11"),
+  surface_12 %>% mutate(source = "Trial 12")
+) %>%
+  filter(!is.na(log_count) & !is.infinite(log_count))  # Remove invalid values
+
+# renamed because 
+resampled_data <- all_surface_data
+
+
+# 1. Calculate correlation coefficients between different distributions
+correlation_results <- data.frame(
+  comparison = character(),
+  pearson_r = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Get unique sources
+sources <- unique(resampled_data$source)
+
+# Calculate correlations for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get log_count values for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    # Skip if lengths don't match or insufficient data
+    if (length(data1) != length(data2) || length(data1) < 3) next
+    
+    # Calculate correlation
+    cor_test <- cor.test(data1, data2)
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      pearson_r = cor_test$estimate,
+      p_value = cor_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 2. Perform Kolmogorov-Smirnov tests
+ks_results <- data.frame(
+  comparison = character(),
+  ks_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Perform KS test for each pair of sources
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    data1 <- resampled_data$log_count[resampled_data$source == source1]
+    data2 <- resampled_data$log_count[resampled_data$source == source2]
+    
+    # Skip if either dataset has insufficient data
+    if (length(data1) < 2 || length(data2) < 2) next
+    
+    # Perform KS test
+    ks_test <- ks.test(data1, data2)
+    
+    # Store results
+    ks_results <- rbind(ks_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      ks_statistic = ks_test$statistic,
+      p_value = ks_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate distances between distributions
+# We'll use Root Mean Square Error (RMSE) as a measure of distance
+rmse_results <- data.frame(
+  comparison = character(),
+  rmse = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Calculate RMSE for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get data points for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area)
+    
+    # Skip if lengths don't match or insufficient data
+    if (nrow(data1) != nrow(data2) || nrow(data1) < 3) next
+    
+    # Calculate RMSE
+    rmse <- sqrt(mean((data1$log_count - data2$log_count)^2, na.rm = TRUE))
+    
+    # Store results
+    rmse_results <- rbind(rmse_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      rmse = rmse,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 4. Perform regression analysis
+regression_results <- data.frame(
+  source = character(),
+  slope = numeric(),
+  intercept = numeric(),
+  r_squared = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# For each source, fit a linear model
+for (source_name in sources) {
+  source_data <- resampled_data %>% 
+    filter(source == source_name) %>%
+    filter(!is.na(log_count) & !is.na(log_area))
+  
+  # Only perform regression if we have sufficient data
+  if (nrow(source_data) >= 3) {
+    # Fit linear model
+    lm_fit <- lm(log_count ~ log_area, data = source_data)
+    lm_summary <- summary(lm_fit)
+    
+    # Store results
+    regression_results <- rbind(regression_results, data.frame(
+      source = source_name,
+      slope = coef(lm_fit)[2],
+      intercept = coef(lm_fit)[1],
+      r_squared = lm_summary$r.squared,
+      p_value = lm_summary$coefficients[2, 4],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate overall distribution summary statistics
+dist_summary <- resampled_data %>%
+  group_by(source) %>%
+  summarize(
+    mean_log_count = mean(log_count, na.rm = TRUE),
+    median_log_count = median(log_count, na.rm = TRUE),
+    sd_log_count = sd(log_count, na.rm = TRUE),
+    min_log_count = min(log_count, na.rm = TRUE),
+    max_log_count = max(log_count, na.rm = TRUE)
+  )
+
+# 4. Perform area under curve analysis
+auc_data <- resampled_data %>%
+  group_by(source) %>%
+  arrange(log_area) %>%
+  summarize(
+    auc = sum(diff(c(first(log_area), log_area)) * (c(first(log_count), head(log_count, -1)) + log_count)/2, na.rm = TRUE)
+  )
+
+
+# Print results
+cat("All Trials Surface Distribution Analysis Results\n")
+cat("\n1. Correlation Analysis:\n")
+print(correlation_results)
+
+cat("\n2. Kolmogorov-Smirnov Test Results:\n")
+print(ks_results)
+
+cat("\n3. Root Mean Square Error Between Distributions:\n")
+print(rmse_results)
+
+cat("\n4. Regression Analysis for Each Distribution:\n")
+print(regression_results)
+
+print("\n5. Area Under Curve Analysis:\n")
+print(auc_data)
+
+print("\n6. Distribution Summary Statistics:\n")
+print(dist_summary)
+
+
+# Statistical Analysis of Edge Distribution Differences for Trial 12
+
+# First, prepare the data by creating a long format dataset for comparison
+all_edge_data <- bind_rows(
+  edge_9 %>% mutate(source = "Trial 9"),
+  edge_10 %>% mutate(source = "Trial 10"),
+  edge_11 %>% mutate(source = "Trial 11"),
+  edge_12 %>% mutate(source = "Trial 12")
+) %>%
+  filter(!is.na(log_count) & !is.infinite(log_count))  # Remove invalid values
+
+# renamed because 
+resampled_data <- all_edge_data
+
+
+# 1. Calculate correlation coefficients between different distributions
+correlation_results <- data.frame(
+  comparison = character(),
+  pearson_r = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Get unique sources
+sources <- unique(resampled_data$source)
+
+# Calculate correlations for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get log_count values for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    # Skip if lengths don't match or insufficient data
+    if (length(data1) != length(data2) || length(data1) < 3) next
+    
+    # Calculate correlation
+    cor_test <- cor.test(data1, data2)
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      pearson_r = cor_test$estimate,
+      p_value = cor_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 2. Perform Kolmogorov-Smirnov tests
+ks_results <- data.frame(
+  comparison = character(),
+  ks_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Perform KS test for each pair of sources
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    data1 <- resampled_data$log_count[resampled_data$source == source1]
+    data2 <- resampled_data$log_count[resampled_data$source == source2]
+    
+    # Skip if either dataset has insufficient data
+    if (length(data1) < 2 || length(data2) < 2) next
+    
+    # Perform KS test
+    ks_test <- ks.test(data1, data2)
+    
+    # Store results
+    ks_results <- rbind(ks_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      ks_statistic = ks_test$statistic,
+      p_value = ks_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate distances between distributions
+# We'll use Root Mean Square Error (RMSE) as a measure of distance
+rmse_results <- data.frame(
+  comparison = character(),
+  rmse = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Calculate RMSE for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get data points for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area)
+    
+    # Skip if lengths don't match or insufficient data
+    if (nrow(data1) != nrow(data2) || nrow(data1) < 3) next
+    
+    # Calculate RMSE
+    rmse <- sqrt(mean((data1$log_count - data2$log_count)^2, na.rm = TRUE))
+    
+    # Store results
+    rmse_results <- rbind(rmse_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      rmse = rmse,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 4. Perform regression analysis
+regression_results <- data.frame(
+  source = character(),
+  slope = numeric(),
+  intercept = numeric(),
+  r_squared = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# For each source, fit a linear model
+for (source_name in sources) {
+  source_data <- resampled_data %>% 
+    filter(source == source_name) %>%
+    filter(!is.na(log_count) & !is.na(log_area))
+  
+  # Only perform regression if we have sufficient data
+  if (nrow(source_data) >= 3) {
+    # Fit linear model
+    lm_fit <- lm(log_count ~ log_area, data = source_data)
+    lm_summary <- summary(lm_fit)
+    
+    # Store results
+    regression_results <- rbind(regression_results, data.frame(
+      source = source_name,
+      slope = coef(lm_fit)[2],
+      intercept = coef(lm_fit)[1],
+      r_squared = lm_summary$r.squared,
+      p_value = lm_summary$coefficients[2, 4],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate overall distribution summary statistics
+dist_summary <- resampled_data %>%
+  group_by(source) %>%
+  summarize(
+    mean_log_count = mean(log_count, na.rm = TRUE),
+    median_log_count = median(log_count, na.rm = TRUE),
+    sd_log_count = sd(log_count, na.rm = TRUE),
+    min_log_count = min(log_count, na.rm = TRUE),
+    max_log_count = max(log_count, na.rm = TRUE)
+  )
+
+# 4. Perform area under curve analysis
+auc_data <- resampled_data %>%
+  group_by(source) %>%
+  arrange(log_area) %>%
+  summarize(
+    auc = sum(diff(c(first(log_area), log_area)) * (c(first(log_count), head(log_count, -1)) + log_count)/2, na.rm = TRUE)
+  )
+
+
+# Print results
+cat("All Trials Edge Distribution Analysis Results\n")
+cat("\n1. Correlation Analysis:\n")
+print(correlation_results)
+
+cat("\n2. Kolmogorov-Smirnov Test Results:\n")
+print(ks_results)
+
+cat("\n3. Root Mean Square Error Between Distributions:\n")
+print(rmse_results)
+
+cat("\n4. Regression Analysis for Each Distribution:\n")
+print(regression_results)
+
+print("\n5. Area Under Curve Analysis:\n")
+print(auc_data)
+
+print("\n6. Distribution Summary Statistics:\n")
+print(dist_summary)
+
+
+```
+
+### 9.2 Binned Comparison
+
+```{r combined_binned graphs}
+# Plot the Binned distribution of Surface data
+ggplot() +
+  geom_line(data = surface_9_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "pink") +
+  geom_line(data = surface_10_binned,
+            aes(x = log_area, y = log_count_bin),
+            color = "blue") +  
+  geom_line(data = surface_11_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "green") +
+    geom_line(data = surface_12_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Starshade Surface Analysis: Binned Particle Area Distribution over 0.1 square meters",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+
+# Plot the Binned starshade edge distributions
+ggplot() +
+  geom_line(data = edge_9_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "pink") +
+  geom_line(data = edge_10_binned,
+            aes(x = log_area, y = log_count_bin),
+            color = "blue") +  
+  geom_line(data = edge_11_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "green") +
+    geom_line(data = edge_12_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Starshade Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+# Plot the Binned calibration edge distributions
+ggplot() +
+  geom_line(data = cw_edge_9_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "pink") +
+  geom_line(data = cw_edge_10_binned,
+            aes(x = log_area, y = log_count_bin),
+            color = "blue") +  
+  geom_line(data = cw_edge_11_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "green") +
+    geom_line(data = cw_edge_12_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Calibration Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+# Plot the Binned model edge distributions
+ggplot() +
+  geom_line(data = model_edge_9_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "pink") +
+  geom_line(data = model_edge_10_binned,
+            aes(x = log_area, y = log_count_bin),
+            color = "blue") +  
+  geom_line(data = model_edge_11_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "green") +
+    geom_line(data = model_edge_12_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Model Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+# Plot the Binned starshade edge distributions
+ggplot() +
+  geom_line(data = s_bmodel_edge_9_binned,
+            aes(x = log_area, y = log_count_bin),
+                color = "pink") +
+  geom_line(data = s_bmodel_edge_10_binned,
+            aes(x = log_area, y = log_count_bin),
+            color = "blue") +  
+  geom_line(data = s_bmodel_edge_11_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "green") +
+    geom_line(data = s_bmodel_edge_12_binned,
+              aes(x = log_area, y = log_count_bin),
+                  color = "orange") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "SLSM Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Pink: Trial 9, Blue: Trial 10, Green: Trial 11, Orange: Trial 12"
+  ) +
+  custom_theme
+
+
+
+```
+
+## 10. Multiple Line analysis
+
+```{r Multiple_line_analysis}
+## 10. Edge Contamination Line Intersection Analysis
+# This section simulates drawing a line across surfaces and analyzes how particles intersect with it
+
+# Filter Trial 12 data from both surfaces, BEFORE contamination
+starshade_surface_before12 <- surface_before_particles %>%
+  filter(Trial == 12) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_before12 <- Cwsurface_before_data$particle_data %>%
+  filter(Trial == 12, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+# Filter Trial 12 data from both surfaces, AFTER contamination
+starshade_surface_after12 <- surface_after_particles %>%
+  filter(Trial == 12) %>%
+  select(Area, BX, BY, Width, Height)
+
+calibration_surface_after12 <- Cwsurface_after_data$particle_data %>%
+  filter(Trial == 12, Area > 1) %>%
+  select(Area, BX, BY, Width, Height)
+
+# Calculate image dimensions for positioning
+image_width <- 600  
+image_height <- 450 
+
+# Function to check if a particle intersects with a horizontal line and calculate overhang area
+# This simulates how a particle would interact with an edge
+particle_intersects_line <- function(particle, line_y) {
+  # Calculate the top and bottom boundaries of the particle
+  particle_top <- particle$BY + particle$Height
+  particle_bottom <- particle$BY 
+  
+  # Check if the line passes through the particle
+  if (line_y <= particle_top && line_y >= particle_bottom) {
+    # Calculate proportion of area that would overhang
+    # Distance from line to top of particle divided by total height
+    proportion_above_line <- (particle_top - line_y) / particle$Height
+    
+    # Calculate the area that would overhang the edge (below the line)
+    overhang_area <- particle$Area * (proportion_above_line)
+    
+    # Return intersection details
+    return(list(
+      intersects = TRUE,
+      area = as.numeric(particle$Area),
+      overhang_proportion = as.numeric(proportion_above_line),
+      overhang_area = as.numeric(overhang_area),
+      diameter = 2 * sqrt(particle$Area / pi),  # Equivalent circular diameter
+      distance_from_line = min(line_y - particle_top, particle_bottom - line_y),  # How close to edge of particle
+      relative_position = (line_y - particle_top) / particle$Height  # Relative position (0 = top, 1 = bottom)
+    ))
+  } else {
+    return(list(intersects = FALSE))
+  }
+}
+
+# Function to analyze intersections for a single line
+analyze_line_intersections <- function(particles_data, line_positions = NULL) {
+  # If no specific positions provided, use middle of image
+  if (is.null(line_positions)) {
+    line_positions <- image_height / 2
+  }
+  
+  # Initialize results storage
+  all_results <- list()
+  
+  # For each line position
+  for (i in 1:length(line_positions)) {
+    line_y <- line_positions[i]
+    
+    # Process each particle to check for intersection
+    intersections <- map(1:nrow(particles_data), function(j) {
+      particle_intersects_line(particles_data[j,], line_y)
+    })
+    
+    # Filter to only intersecting particles
+    intersecting_particles <- intersections[sapply(intersections, function(x) x$intersects)]
+    
+    # Calculate statistics for this line
+    if (length(intersecting_particles) > 0) {
+    all_results[[i]] <- list(
+      line_position = line_y,
+      num_intersections = length(intersecting_particles),
+      intersecting_particles = intersecting_particles,
+      total_area = sum(sapply(intersecting_particles, function(x) x$area)),
+      overhang_area = sum(sapply(intersecting_particles, function(x) x$overhang_area)),
+      size_data = tibble(
+          area = sapply(intersecting_particles, function(x) x$area),
+          diameter = sapply(intersecting_particles, function(x) x$diameter),
+          overhang_prop = sapply(intersecting_particles, function(x) x$overhang_proportion)
+        )
+    )
+    } else {
+      all_results[[i]] <- list(
+        line_position = line_y,
+        num_intersections = 0,
+        intersecting_particles = list(),
+        total_area = 0,
+        overhang_area = 0,
+        size_data = tibble(area = numeric(0), diameter = numeric(0), overhang_prop = numeric(0))
+      )
+    }
+  }
+  
+  return(all_results)
+}
+
+# Use the middle of the image for the edge simulation line
+central_line_y <- image_height / 2
+
+lines <- c(10,50,100,130,185,225,290,320,350,380)
+
+
+# Analyze both surfaces with the same single line - BEFORE contamination
+starshade_before_results12 <- analyze_line_intersections(starshade_surface_before12, lines)
+calibration_before_results12 <- analyze_line_intersections(calibration_surface_before12, lines)
+
+# Analyze both surfaces with the same single line - AFTER contamination
+starshade_after_results12 <- analyze_line_intersections(starshade_surface_after12, lines)
+calibration_after_results12 <- analyze_line_intersections(calibration_surface_after12, lines)
+
+
+# Function to process a single set of results and create a dataframe
+process_results_to_df <- function(results_list, source_name, time_label, trial_number) {
+  # Create an empty dataframe if we need it
+  empty_df <- data.frame(
+    intersects = logical(0),
+    area = numeric(0),
+    overhang_proportion = numeric(0),
+    overhang_area = numeric(0),
+    diameter = numeric(0),
+    distance_from_line = numeric(0),
+    relative_position = numeric(0),
+    source = character(0),
+    time = character(0),
+    trial = character(0),
+    line_index = numeric(0)
+  )
+  
+  # Process each line result in the list (1 to 10)
+  result_dfs <- list()
+  
+  for (i in seq_along(results_list)) {
+    result <- results_list[[i]]
+    
+    # Check if there are any intersecting particles
+    if (length(result$intersecting_particles) > 0) {
+      # Convert the list of lists to a dataframe
+      df <- map_df(result$intersecting_particles, ~as.data.frame(t(.x))) %>%
+        mutate(
+          area = as.numeric(area),
+          overhang_proportion = as.numeric(overhang_proportion),
+          overhang_area = as.numeric(overhang_area),
+          diameter = as.numeric(diameter),
+          distance_from_line = as.numeric(distance_from_line),
+          relative_position = as.numeric(relative_position),
+          source = source_name,
+          time = time_label,
+          Trial = trial_number,
+          line_index = i
+        )
+      
+      result_dfs[[i]] <- df
+    } else {
+      # Add an empty dataframe with the right structure if no results
+      result_dfs[[i]] <- empty_df
+    }
+  }
+  
+  # Combine all the results into a single dataframe
+  bind_rows(result_dfs)
+}
+
+# Process all the starshade and calibration results
+# For Trial 12
+starshade_sim_after12 <- process_results_to_df(
+  starshade_after_results12, 
+  "starshade_surface", 
+  "after", 
+  "12"
+)
+
+starshade_sim_before12 <- process_results_to_df(
+  starshade_before_results12, 
+  "starshade_surface", 
+  "before", 
+  "12"
+)
+
+calibration_sim_after12 <- process_results_to_df(
+  calibration_after_results12, 
+  "calibration_surface", 
+  "after", 
+  "12"
+)
+
+calibration_sim_before12 <- process_results_to_df(
+  calibration_before_results12, 
+  "calibration_surface", 
+  "before", 
+  "12"
+)
+
+
+
+# Datasets to work from
+
+s_bmodel_edge_before <- rbind( starshade_sim_before12)
+
+s_bmodel_edge_after <- rbind( starshade_sim_after12)
+
+c_bmodel_edge_before <- rbind(calibration_sim_before12)
+
+c_bmodel_edge_after <- rbind(calibration_sim_after12)
+
+
+# Calculate normalization factors for edge measurements
+new_edge_factors<- surface_before_data$summary_data %>%
+  group_by(Trial) %>%
+  summarise(
+    Total_Width = n() * 600 * 1e-6,  # Convert microns to meters
+    .groups = "drop"
+  )
+
+get_area_counts <- function(data, area_thresholds, normalization_factor) {
+  # Initialize counts vector
+  counts <- numeric(length(area_thresholds))
+  
+  # For bins except the last one
+  for(i in 1:(length(area_thresholds) - 1)) {
+    counts[i] <- sum(data$overhang_area >= area_thresholds[i] & 
+                    data$overhang_area < area_thresholds[i + 1]) * normalization_factor
+  }
+  
+  # For the last bin
+  counts[length(area_thresholds)] <- sum(data$overhang_area >= area_thresholds[length(area_thresholds)]) * normalization_factor
+  
+  # Return results in the same format as expected by the original code
+  tibble(
+    Area = area_thresholds,
+    Count = counts
+  )
+}
+
+# Calculate area-based counts for edge data using the same function as surface data
+edge_counts_before <- s_bmodel_edge_before %>%
+  group_by(Trial, line_index) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+edge_counts_after <- s_bmodel_edge_after %>%
+  group_by(Trial, line_index) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+surface_count_diff <- edge_counts_after %>%
+  full_join(edge_counts_before, 
+            by = c("Trial", "Area", "line_index"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Positive_Diff = pmax(Count_Diff, 0))
+
+# Calculate cumulative counts (particles larger than each threshold)
+cumulative_edge_counts <- surface_count_diff %>%
+  group_by(Trial, line_index) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum(Positive_Diff)) %>%
+  ungroup() %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Cumulative_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>% 
+  arrange(Trial, desc(Area)) 
+
+
+#  Future Use # Calculate best fit lines for edge data
+# edge_best_fits <- average_edge_counts %>%
+#   group_by(Trial) %>%
+#   mutate(
+#     log_area = log10(Area),
+#     log_count = log10(Average_Count),
+#     log_count = ifelse(log_count < 0, 0, log_count)
+#   ) %>%
+#   summarise(
+#     slope = coef(lm(log_count ~ log_area))[2],
+#     intercept = coef(lm(log_count ~ log_area))[1],
+#     .groups = "drop"
+#   ) %>%
+#   mutate(PCL = 10^(-intercept/slope))  # Calculate Product Cleanliness Level
+
+s_bmodel_edge_12 <- cumulative_edge_counts %>% 
+  filter( Trial == 12)
+
+# Calculate binned counts from cumulative data
+edge_binned <- cumulative_edge_counts %>%
+  group_by(Trial, line_index) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Cumulative_Count[1], diff(Cumulative_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+
+s_bmodel_edge_12_binned <- edge_binned %>% 
+  filter( Trial == 12)
+
+#Calibration Wafer Now
+
+# Calculate normalization factors for edge measurements
+new_edge_factors<- Cwsurface_before_data$summary_data %>%
+  group_by(Trial) %>%
+  summarise(
+    Total_Width = n() * 600 * 1e-6,  # Convert microns to meters
+    .groups = "drop"
+  )
+
+get_area_counts <- function(data, area_thresholds, normalization_factor) {
+  # Initialize counts vector
+  counts <- numeric(length(area_thresholds))
+  
+  # For bins except the last one
+  for(i in 1:(length(area_thresholds) - 1)) {
+    counts[i] <- sum(data$overhang_area >= area_thresholds[i] & 
+                    data$overhang_area < area_thresholds[i + 1]) * normalization_factor
+  }
+  
+  # For the last bin
+  counts[length(area_thresholds)] <- sum(data$overhang_area >= area_thresholds[length(area_thresholds)]) * normalization_factor
+  
+  # Return results in the same format as expected by the original code
+  tibble(
+    Area = area_thresholds,
+    Count = counts
+  )
+}
+
+# Calculate area-based counts for edge data using the same function as surface data
+edge_counts_before <- c_bmodel_edge_before %>%
+  group_by(Trial, line_index) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+edge_counts_after <- c_bmodel_edge_after %>%
+  group_by(Trial, line_index) %>%
+  group_modify(~ {
+    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Trial == .y$Trial]
+    counts <- get_area_counts(.x, area_thresholds, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts$Count
+    )
+  })
+
+surface_count_diff <- edge_counts_after %>%
+  full_join(edge_counts_before, 
+            by = c("Trial", "Area","line_index"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Positive_Diff = pmax(Count_Diff, 0))
+
+# Calculate cumulative counts (particles larger than each threshold)
+cumulative_edge_counts <- surface_count_diff %>%
+  group_by(Trial, line_index) %>%
+  arrange(desc(Area)) %>%
+  mutate(Cumulative_Count = cumsum(Positive_Diff)) %>%
+  ungroup() %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Cumulative_Count),
+         log_count = ifelse(log_count < 0, 0, log_count)) %>% 
+  arrange(Trial, desc(Area)) 
+
+
+#  Future Use # Calculate best fit lines for edge data
+# edge_best_fits <- average_edge_counts %>%
+#   group_by(Trial) %>%
+#   mutate(
+#     log_area = log10(Area),
+#     log_count = log10(Average_Count),
+#     log_count = ifelse(log_count < 0, 0, log_count)
+#   ) %>%
+#   summarise(
+#     slope = coef(lm(log_count ~ log_area))[2],
+#     intercept = coef(lm(log_count ~ log_area))[1],
+#     .groups = "drop"
+#   ) %>%
+#   mutate(PCL = 10^(-intercept/slope))  # Calculate Product Cleanliness Level
+
+c_bmodel_edge_12 <- cumulative_edge_counts %>% 
+  filter( Trial == 12)
+
+# Calculate binned counts from cumulative data
+edge_binned <- cumulative_edge_counts %>%
+  group_by(Trial, line_index) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Cumulative_Count[1], diff(Cumulative_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+
+c_bmodel_edge_12_binned <- edge_binned %>% 
+  filter( Trial == 12)
+
+
+# Plot the cumulative starshade edge distributions
+ggplot() +
+    geom_line(data = s_bmodel_edge_12,
+              aes(x = log_area, y = log_count,
+                  color = factor(line_index), 
+                group = line_index)) +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Starshade Multiple Line Analysis: Cumulative Particle Area Distribution over 0.1 meter") +
+  custom_theme
+
+# Plot the binned edge distributions
+ggplot() +
+    geom_line(data = s_bmodel_edge_12_binned,
+              aes(x = log_area, y = log_count_bin,
+                  color = factor(line_index), 
+                group = line_index)) +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Starshade Multiple Line Analysis: Binned Particle Area Distribution over 0.1 meter") +
+  custom_theme
+
+# Plot the cumulative calibration edge distributions
+ggplot() +
+    geom_line(data = c_bmodel_edge_12,
+              aes(x = log_area, y = log_count,
+                  color = factor(line_index), 
+                group = line_index)) +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Calibration Multiple Line Analysis: Cumulative Particle Area Distribution over 0.1 meter") +
+  custom_theme
+
+# Plot the binned edge distributions
+ggplot() +
+    geom_line(data = c_bmodel_edge_12_binned,
+              aes(x = log_area, y = log_count_bin,
+                  color = factor(line_index), 
+                group = line_index)) +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Calibration Multiple Line Analysis: Binned Particle Area Distribution over 0.1 meter") +
+  custom_theme
+
+# First, prepare the data by creating a long format dataset for comparison
+
+# renamed because 
+resampled_data <- s_bmodel_edge_12 %>% mutate(source = as.numeric(line_index))
+
+
+# 1. Calculate correlation coefficients between different distributions
+correlation_results <- data.frame(
+  comparison = character(),
+  pearson_r = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Get unique sources
+sources <- unique(resampled_data$source)
+
+# Calculate correlations for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get log_count values for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    # Skip if lengths don't match or insufficient data
+    if (length(data1) != length(data2) || length(data1) < 3) next
+    
+    # Calculate correlation
+    cor_test <- cor.test(data1, data2)
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      pearson_r = cor_test$estimate,
+      p_value = cor_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 2. Perform Kolmogorov-Smirnov tests
+ks_results <- data.frame(
+  comparison = character(),
+  ks_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Perform KS test for each pair of sources
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    data1 <- resampled_data$log_count[resampled_data$source == source1]
+    data2 <- resampled_data$log_count[resampled_data$source == source2]
+    
+    # Skip if either dataset has insufficient data
+    if (length(data1) < 2 || length(data2) < 2) next
+    
+    # Perform KS test
+    ks_test <- ks.test(data1, data2)
+    
+    # Store results
+    ks_results <- rbind(ks_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      ks_statistic = ks_test$statistic,
+      p_value = ks_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate distances between distributions
+# We'll use Root Mean Square Error (RMSE) as a measure of distance
+rmse_results <- data.frame(
+  comparison = character(),
+  rmse = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Calculate RMSE for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get data points for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area)
+    
+    # Skip if lengths don't match or insufficient data
+    if (nrow(data1) != nrow(data2) || nrow(data1) < 3) next
+    
+    # Calculate RMSE
+    rmse <- sqrt(mean((data1$log_count - data2$log_count)^2, na.rm = TRUE))
+    
+    # Store results
+    rmse_results <- rbind(rmse_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      rmse = rmse,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 4. Perform regression analysis
+regression_results <- data.frame(
+  source = character(),
+  slope = numeric(),
+  intercept = numeric(),
+  r_squared = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# For each source, fit a linear model
+for (source_name in sources) {
+  source_data <- resampled_data %>% 
+    filter(source == source_name) %>%
+    filter(!is.na(log_count) & !is.na(log_area))
+  
+  # Only perform regression if we have sufficient data
+  if (nrow(source_data) >= 3) {
+    # Fit linear model
+    lm_fit <- lm(log_count ~ log_area, data = source_data)
+    lm_summary <- summary(lm_fit)
+    
+    # Store results
+    regression_results <- rbind(regression_results, data.frame(
+      source = source_name,
+      slope = coef(lm_fit)[2],
+      intercept = coef(lm_fit)[1],
+      r_squared = lm_summary$r.squared,
+      p_value = lm_summary$coefficients[2, 4],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate overall distribution summary statistics
+dist_summary <- resampled_data %>%
+  group_by(source) %>%
+  summarize(
+    mean_log_count = mean(log_count, na.rm = TRUE),
+    median_log_count = median(log_count, na.rm = TRUE),
+    sd_log_count = sd(log_count, na.rm = TRUE),
+    min_log_count = min(log_count, na.rm = TRUE),
+    max_log_count = max(log_count, na.rm = TRUE)
+  )
+
+# 4. Perform area under curve analysis
+auc_data <- resampled_data %>%
+  group_by(source) %>%
+  arrange(log_area) %>%
+  summarize(
+    auc = sum(diff(c(first(log_area), log_area)) * (c(first(log_count), head(log_count, -1)) + log_count)/2, na.rm = TRUE)
+  )
+
+
+# Print results
+cat("All Lines Starshade Surface Model Distribution Analysis Results\n")
+cat("\n1. Correlation Analysis:\n")
+print(correlation_results)
+
+cat("\n2. Kolmogorov-Smirnov Test Results:\n")
+print(ks_results)
+
+cat("\n3. Root Mean Square Error Between Distributions:\n")
+print(rmse_results)
+
+cat("\n4. Regression Analysis for Each Distribution:\n")
+print(regression_results)
+
+print("\n5. Area Under Curve Analysis:\n")
+print(auc_data)
+
+print("\n6. Distribution Summary Statistics:\n")
+print(dist_summary)
+
+
+# Statistical Analysis of Edge Distribution Differences for Trial 12
+
+resampled_data <- c_bmodel_edge_12 %>% mutate(source = as.numeric(line_index))
+
+
+# 1. Calculate correlation coefficients between different distributions
+correlation_results <- data.frame(
+  comparison = character(),
+  pearson_r = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Get unique sources
+sources <- unique(resampled_data$source)
+
+# Calculate correlations for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get log_count values for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area) %>%
+      pull(log_count)
+    
+    # Skip if lengths don't match or insufficient data
+    if (length(data1) != length(data2) || length(data1) < 3) next
+    
+    # Calculate correlation
+    cor_test <- cor.test(data1, data2)
+    
+    # Store results
+    correlation_results <- rbind(correlation_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      pearson_r = cor_test$estimate,
+      p_value = cor_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 2. Perform Kolmogorov-Smirnov tests
+ks_results <- data.frame(
+  comparison = character(),
+  ks_statistic = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Perform KS test for each pair of sources
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    data1 <- resampled_data$log_count[resampled_data$source == source1]
+    data2 <- resampled_data$log_count[resampled_data$source == source2]
+    
+    # Skip if either dataset has insufficient data
+    if (length(data1) < 2 || length(data2) < 2) next
+    
+    # Perform KS test
+    ks_test <- ks.test(data1, data2)
+    
+    # Store results
+    ks_results <- rbind(ks_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      ks_statistic = ks_test$statistic,
+      p_value = ks_test$p.value,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate distances between distributions
+# We'll use Root Mean Square Error (RMSE) as a measure of distance
+rmse_results <- data.frame(
+  comparison = character(),
+  rmse = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Calculate RMSE for each pair
+for (i in 1:(length(sources)-1)) {
+  for (j in (i+1):length(sources)) {
+    source1 <- sources[i]
+    source2 <- sources[j]
+    
+    # Get data points for both sources
+    data1 <- resampled_data %>% 
+      filter(source == source1) %>%
+      arrange(log_area)
+    
+    data2 <- resampled_data %>% 
+      filter(source == source2) %>%
+      arrange(log_area)
+    
+    # Skip if lengths don't match or insufficient data
+    if (nrow(data1) != nrow(data2) || nrow(data1) < 3) next
+    
+    # Calculate RMSE
+    rmse <- sqrt(mean((data1$log_count - data2$log_count)^2, na.rm = TRUE))
+    
+    # Store results
+    rmse_results <- rbind(rmse_results, data.frame(
+      comparison = paste(source1, "vs", source2),
+      rmse = rmse,
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 4. Perform regression analysis
+regression_results <- data.frame(
+  source = character(),
+  slope = numeric(),
+  intercept = numeric(),
+  r_squared = numeric(),
+  p_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# For each source, fit a linear model
+for (source_name in sources) {
+  source_data <- resampled_data %>% 
+    filter(source == source_name) %>%
+    filter(!is.na(log_count) & !is.na(log_area))
+  
+  # Only perform regression if we have sufficient data
+  if (nrow(source_data) >= 3) {
+    # Fit linear model
+    lm_fit <- lm(log_count ~ log_area, data = source_data)
+    lm_summary <- summary(lm_fit)
+    
+    # Store results
+    regression_results <- rbind(regression_results, data.frame(
+      source = source_name,
+      slope = coef(lm_fit)[2],
+      intercept = coef(lm_fit)[1],
+      r_squared = lm_summary$r.squared,
+      p_value = lm_summary$coefficients[2, 4],
+      stringsAsFactors = FALSE
+    ))
+  }
+}
+
+# 3. Calculate overall distribution summary statistics
+dist_summary <- resampled_data %>%
+  group_by(source) %>%
+  summarize(
+    mean_log_count = mean(log_count, na.rm = TRUE),
+    median_log_count = median(log_count, na.rm = TRUE),
+    sd_log_count = sd(log_count, na.rm = TRUE),
+    min_log_count = min(log_count, na.rm = TRUE),
+    max_log_count = max(log_count, na.rm = TRUE)
+  )
+
+# 4. Perform area under curve analysis
+auc_data <- resampled_data %>%
+  group_by(source) %>%
+  arrange(log_area) %>%
+  summarize(
+    auc = sum(diff(c(first(log_area), log_area)) * (c(first(log_count), head(log_count, -1)) + log_count)/2, na.rm = TRUE)
+  )
+
+
+# Print results
+cat("All Lines Calibration Surface Model Distribution Analysis Results\n")
+cat("\n1. Correlation Analysis:\n")
+print(correlation_results)
+
+cat("\n2. Kolmogorov-Smirnov Test Results:\n")
+print(ks_results)
+
+cat("\n3. Root Mean Square Error Between Distributions:\n")
+print(rmse_results)
+
+cat("\n4. Regression Analysis for Each Distribution:\n")
+print(regression_results)
+
+print("\n5. Area Under Curve Analysis:\n")
+print(auc_data)
+
+print("\n6. Distribution Summary Statistics:\n")
+print(dist_summary)
+
+
+
+```
+
+<!-- Next steps include comparison to paper sections, Witness Analysis, Cropped Surface Analysis -->
+
+
+## 11. Paper Comparisons
+<!-- This section creates figures that can be directly compared with those in the research paper -->
+
+```{r comparison graphs, include=FALSE, echo = FALSE, eval=FALSE}
+# Calculate surface binned fit parameters for comparison with literature
 surface_binned_fit <- overall_average_surface_binned %>%
   summarise(
     slope = coef(lm(log_count ~ log_area))[2],
@@ -1181,29 +5231,30 @@ surface_binned_fit <- overall_average_surface_binned %>%
     .groups = "drop"
   ) %>%
   mutate(PCL = 10^(sqrt(-intercept/slope)))
-#logN = -0.926(log2 (x) - log2 (PCL))
+#logN = -0.926(log2 (x) - log2 (PCL)) - IEST standard formula for reference
 
-
-
-# For calibration data
+# Normalize calibration data for comparison
+# Converts to proportion of particles rather than absolute counts
 calibration_normalized <- overall_average_calibration_binned %>% 
   mutate(
     Total_Count = sum(10^log_count, na.rm = TRUE),
     Normalized_Count = 10^log_count / Total_Count) 
   
-# For edge data
+# Normalize edge data similarly
 edge_normalized <- overall_average_binned %>%
   mutate(
     Total_Count = sum(10^log_count, na.rm = TRUE),
     Normalized_Count = 10^log_count / Total_Count )
 
+# Calculate the ratio between normalized distributions
+# This helps identify the "adhesion factor" described in the paper
 normalized_ratio <- calibration_normalized %>% 
   full_join(edge_normalized, by = c("Area", "log_area")) %>% 
   mutate(observed_over_calibration = Normalized_Count.y/Normalized_Count.x,
          Ratio = 1/(2*(sqrt(10^(log_area)/pi)))) %>% 
   select(Area,log_area,observed_over_calibration,Ratio)
 
-# Updated plot theme with improved readability
+# Updated plot theme with improved readability for publication-quality figures
 plot_theme <- theme_minimal() +
   theme(
     panel.grid.major = element_line(color = "gray90"),
@@ -1216,7 +5267,8 @@ plot_theme <- theme_minimal() +
     plot.subtitle = element_text(size = 10, hjust = 0.5)
   )
 
-# Figure 15 - Updated Surface Plot
+# Figure 15(a) - Total Measured Surface Particulate Distribution
+# Recreates Fig. 15 from the paper with updated data
 p1 <- ggplot() +
   geom_line(data = overall_average_surface_binned,
             aes(x = 10^log_area, y = 10^log_count, color = "Measured on Surface")) +
@@ -1252,26 +5304,19 @@ p1 <- ggplot() +
     hjust = 0
   )
 
-# Figure 15 - Updated Edge Plot
+# Figure 15(b) - Total Measured Edge Particulate Distribution
+# Shows actual vs predicted particle counts and the adhesion factor effect
 p2 <- ggplot() +
   geom_line(data = overall_average_binned,
-            aes(x = 10^log_area, y = 10^log_count, color = "Measured on Edge")) +
+            aes(x = log_area, y = log_count, color = "Measured on Edge")) +
   geom_line(data = overall_average_model_binned,
-            aes(x = 10^log_area, y = 10^log_count, color = "Predicted from Surface")) +
+            aes(x = log_area, y = log_count, color = "Predicted from Surface")) +
   geom_line(data = overall_average_model_binned,
-            aes(x = 10^log_area, 
-                y = (10^log_count)/(2*(sqrt(10^(log_area)/pi))),
+            aes(x = log_area, 
+                y = (log_count)/(2*(sqrt((log_area)/pi))),
                 color = "Predicted with Adhesion Factor"),
             linetype = "dotted") +
-  scale_x_log10(
-    limits = c(10, 1e5),
-    breaks = 10^(1:5),
-    labels = scales::scientific_format(digits = 1)
-  ) +
-  scale_y_log10(
-    limits = c(1, 1e3),
-    breaks = 10^(0:3)
-  ) +
+  
   scale_color_manual(
     values = c(
       "Measured on Edge" = "#0072BD",
@@ -1286,7 +5331,8 @@ p2 <- ggplot() +
   ) +
   plot_theme
 
-# Figure 16 - Updated Distribution Plot
+# Figure 16(a) - Normalized Edge Particulate Distributions
+# Shows proportional distribution of particles by size
 p3 <- ggplot() +
   geom_line(data = calibration_normalized,
             aes(x = 10^log_area, y = Normalized_Count, color = "Calibration Mask")) +
@@ -1314,7 +5360,9 @@ p3 <- ggplot() +
   ) +
   plot_theme
 
-# Figure 16 - Updated Ratio Plot
+# Figure 16(b) - Missing Edge Particulate Ratio
+# Shows ratio of etched samples to calibration samples
+# The inverse diameter effect is key to the paper's findings
 p4 <- ggplot() +
   geom_line(data = normalized_ratio,
             aes(x = 10^log_area, y = observed_over_calibration, color = "Ratio")) +
@@ -1342,26 +5390,28 @@ p4 <- ggplot() +
   ) +
   plot_theme
 
+# Display each plot separately
 p1
 p2
 p3
 p4
 ```
 
-```{r combined comparison}
+```{r combined comparison, include=FALSE, echo = FALSE, eval = FALSE}
+# Functions to create combined figures for comparison with paper figures
 
+# Create image grid from PNG file
 create_image_grob <- function(img_path) {
   img <- readPNG(img_path)
   rasterGrob(img, interpolate = TRUE)
 }
 
-# Function to create text grob for labels
+# Create text grid for labels
 create_label <- function(text) {
   textGrob(text, gp = gpar(fontsize = 12, fontface = "bold"))
 }
 
-
-# Figure 15 Comparison
+# Compare Figure 15 - Side by side comparison with original paper figure
 grid.arrange(
   create_image_grob("/Users/brandontitensor/Desktop/College/Research/Dust_Contamination/starshade_dust_particle/data_analysis/Figure_15.png"),
   arrangeGrob(p1, p2, ncol = 2),
@@ -1371,7 +5421,7 @@ grid.arrange(
                  gp = gpar(fontsize = 14, fontface = "bold"))
 )
 
-# Create layout for comparison
+# Function to compare reference and generated plots
 compare_plots <- function(reference_img, generated_plot, title) {
   grid.arrange(
     reference_img, generated_plot,
@@ -1381,7 +5431,7 @@ compare_plots <- function(reference_img, generated_plot, title) {
   )
 }
 
-# Figure 16 Comparison
+# Compare Figure 16 - Side by side with original paper figure
 grid.arrange(
   create_image_grob("/Users/brandontitensor/Desktop/College/Research/Dust_Contamination/starshade_dust_particle/data_analysis/Figure_16.png"),
   arrangeGrob(p3, p4, ncol = 2),
@@ -1390,5 +5440,6 @@ grid.arrange(
   top = textGrob("Figure 16: Comparative Analysis Comparison", 
                  gp = gpar(fontsize = 14, fontface = "bold"))
 )
-
 ```
+
+

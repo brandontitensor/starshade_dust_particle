@@ -45,7 +45,7 @@ function getEdgeFilename(finishedName) {
     if (startsWith(finishedName, "Difference")) {
         return "Edge" + substring(finishedName, 10); // "Difference" is 10 characters
     }
-    return finishedName; // Return unchanged if doesn't start with "Difference"
+    return "Edge" + finishedName; // Return unchanged if doesn't start with "Difference"
 }
 
 // Main script

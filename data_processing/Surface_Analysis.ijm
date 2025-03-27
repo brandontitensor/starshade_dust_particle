@@ -49,7 +49,7 @@ for (i = 0; i < list.length; i++) {
         }
         // Get the current date and time
         getDateAndTime(year, month, dayOfWeek, dayOfMonth, hour, minute, second, msec);
-        dateTime = year + "_" + month + "_" + dayOfMonth + "_" + hour + "_" + minute + "_" + second;
+        dateTime = year + "_" + month + "_" + dayOfMonth;
         // Save the "Summary" table if it exists
         if (isOpen("Summary")) {
             Table.save(out+"/Summary_"+dayOfMonth+"_"+hour+"_"+minute+"_"+".csv", "Summary");
