@@ -478,9 +478,11 @@ Witsurface_after_data <- load_data("aft")
 ```{r surface_area_distribution_analysis}
 # Filter surface particles by minimum area (1 )
 surface_before_particles <- surface_before_data$particle_data %>%
-  filter(Area > 1)
+  filter(Area > 1) %>% 
+    filter(Area < 6000)
 surface_after_particles <- surface_after_data$particle_data %>%
-  filter(Area > 1)
+  filter(Area > 1) %>% 
+    filter(Area < 6000)
 combined_surface_data <- bind_rows(surface_before_particles,surface_after_particles)
 
 # Create logarithmically spaced area thresholds from minimum to maximum particle size
@@ -692,6 +694,11 @@ surface_average_air_binned <- bind_rows(surface_13_binned, surface_14_binned) %>
 <!-- This section analyzes particle distributions on the edges of samples -->
 
 ```{r edge_area_distribution_analysis}
+
+edge_particles_data <- edge_particles_data %>%
+  filter(Area > 1) %>% 
+  filter(Area < 6000)
+
 # Calculate normalization factors for edge measurements
 new_edge_factors<- edge_summary_data %>%
   group_by(Sample, Trial) %>%
@@ -837,6 +844,11 @@ edge_average_air_binned <- bind_rows(edge_13_binned, edge_14_binned) %>%
 <!-- This section analyzes particle distributions on calibration wafer edges for comparison with sample edges -->
 
 ```{r calibration_wafer_analysis_edge}
+
+calibration_particles_data <- calibration_particles_data %>%
+  filter(Area > 1) %>% 
+  filter(Area < 6000)
+
 # Calculate normalization factors for edge measurements
 new_calibration_factors<- calibration_summary_data %>%
   group_by(Sample, Trial) %>%
@@ -996,9 +1008,13 @@ cw_edge_average_air_binned <- bind_rows(cw_edge_13_binned, cw_edge_14_binned) %>
 ```{r cal_surface_area_distribution_analysis}
 # Filter surface particles by minimum area (1 )
 cw_surface_before_particles <- Cwsurface_before_data$particle_data %>%
-  filter(Area > 1)
+  filter(Area > 1) %>% 
+  filter(Area < 6000)
+
 cw_surface_after_particles <- Cwsurface_after_data$particle_data %>%
-  filter(Area > 1)
+  filter(Area > 1) %>% 
+  filter(Area < 6000)
+
 cw_combined_surface_data <- bind_rows(cw_surface_before_particles,cw_surface_after_particles)
 
 cw_new_sample_areas <- Cwsurface_before_data$summary_data %>%
@@ -1166,9 +1182,13 @@ cw_surface_average_air_binned <- bind_rows(cw_surface_13_binned, cw_surface_14_b
 ```{r wit_surface_area_distribution_analysis}
 # Filter surface particles by minimum area (1 )
 wit_surface_before_particles <- Witsurface_before_data$particle_data %>%
-  filter(Area > 1)
+  filter(Area > 1) %>% 
+  filter(Area < 6000)
+
 wit_surface_after_particles <- Witsurface_after_data$particle_data %>%
-  filter(Area > 1)
+  filter(Area > 1) %>% 
+  filter(Area < 6000)
+
 wit_combined_surface_data <- bind_rows(wit_surface_before_particles,wit_surface_after_particles)
 
 wit_new_sample_areas <- Witsurface_before_data$summary_data %>%
@@ -10163,7 +10183,7 @@ ggplot() +
 
 ## 12. Multiple Line analysis
 
-```{r Multiple_line_analysis, include=FALSE, echo = FALSE, eval=TRUE}
+```{r Multiple_line_analysis}
 # This section simulates drawing a line across surfaces and analyzes how particles intersect with it
 # Expanded to cover trials 9, 12, 13, 14 and all three surfaces: starshade, calibration, and witness
 
