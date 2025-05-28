@@ -478,11 +478,9 @@ Witsurface_after_data <- load_data("aft")
 ```{r surface_area_distribution_analysis}
 # Filter surface particles by minimum area (1 )
 surface_before_particles <- surface_before_data$particle_data %>%
-  filter(Area > 1) %>% 
-    filter(Area < 6000)
+ filter(Area > 1, Area < 6000) 
 surface_after_particles <- surface_after_data$particle_data %>%
-  filter(Area > 1) %>% 
-    filter(Area < 6000)
+ filter(Area > 1, Area < 6000) 
 combined_surface_data <- bind_rows(surface_before_particles,surface_after_particles)
 
 # Create logarithmically spaced area thresholds from minimum to maximum particle size
@@ -1007,15 +1005,12 @@ cw_edge_average_air_binned <- bind_rows(cw_edge_13_binned, cw_edge_14_binned) %>
 
 ```{r cal_surface_area_distribution_analysis}
 # Filter surface particles by minimum area (1 )
-cw_surface_before_particles <- Cwsurface_before_data$particle_data %>%
-  filter(Area > 1) %>% 
-  filter(Area < 6000)
+Cwsurface_before_data$particle_data <- Cwsurface_before_data$particle_data %>%
+ filter(Area > 1, Area < 6000) 
 
-cw_surface_after_particles <- Cwsurface_after_data$particle_data %>%
-  filter(Area > 1) %>% 
-  filter(Area < 6000)
+Cwsurface_after_data$particle_data <- Cwsurface_after_data$particle_data %>%
+ filter(Area > 1, Area < 6000) 
 
-cw_combined_surface_data <- bind_rows(cw_surface_before_particles,cw_surface_after_particles)
 
 cw_new_sample_areas <- Cwsurface_before_data$summary_data %>%
   group_by(Sample, Trial, Cleaning_Method) %>%
@@ -1027,7 +1022,7 @@ cw_new_sample_areas <- Cwsurface_before_data$summary_data %>%
 
 # Calculate area-based counts for before and after data
 # Normalizes each sample to 0.1 m² for standardized comparison
-cw_surface_before_counts <- cw_surface_before_particles %>%
+cw_surface_before_counts <- Cwsurface_before_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
     norm_factor <- 0.1 /  cw_new_sample_areas$Total_Area[cw_new_sample_areas$Sample == .y$Sample &  cw_new_sample_areas$Trial == .y$Trial]
@@ -7078,6 +7073,73 @@ ggplot() +
     title = "Starshade Edge Analysis 14 - Samples : Binned Particle Area Distribution over 0.1 square meters",
     subtitle = "Sky Blue: Sample 1, Navy Blue: Sample 2, Green: Sample 3, Purple: Sample 4, Orange: Sample 5") +
   custom_theme
+
+ggplot() +
+  geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 14 & Sample == "1"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#56B4E9", 
+            linetype = "solid") +
+    geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 14 & Sample == "2"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#0072B2", 
+            linetype = "dashed") +
+    geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 14 & Sample == "3"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#009E73", 
+                  linetype = "dotted") +
+    geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 14 & Sample == "4"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#CC79A7", 
+                  linetype = "dotdash") +
+    geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 14 & Sample == "5"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#D55E00", 
+                  linetype = "longdash") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Calibration Surface Analysis 14 - Samples : Cumulative Particle Area Distribution over 0.1 square meters",
+    subtitle = "Sky Blue: Sample 1, Navy Blue: Sample 2, Green: Sample 3, Purple: Sample 4, Orange: Sample 5") +
+  custom_theme
+
+ggplot() +
+  geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 14 & Sample == "1"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#56B4E9", 
+            linetype = "solid") +
+    geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 14 & Sample == "2"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#0072B2", 
+            linetype = "dashed") +
+    geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 14 & Sample == "3"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#009E73", 
+                  linetype = "dotted") +
+    geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 14 & Sample == "4"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#CC79A7", 
+                  linetype = "dotdash") +
+    geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 14 & Sample == "5"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#D55E00", 
+                  linetype = "longdash") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Calibration Surface Analysis 14 - Samples : Binned Particle Area Distribution over 0.1 square meters",
+    subtitle = "Sky Blue: Sample 1, Navy Blue: Sample 2, Green: Sample 3, Purple: Sample 4, Orange: Sample 5") +
+  custom_theme
+
 
 ggplot() +
   geom_line(data = cw_cumulative_edge %>% 
