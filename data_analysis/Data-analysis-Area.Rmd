@@ -585,9 +585,7 @@ average_surface_cumulative <- cumulative_surface %>%
   ) %>%
   mutate(log_area = log10(Area),
          log_count = log10(Average_Count),
-         log_scatter = log10(Average_Scatter),
-         log_count = ifelse(log_count < 0, 0, log_count),
-         log_scatter = ifelse(log_scatter < 0, 0, log_scatter))
+         log_scatter = log10(Average_Scatter))
 
 # Extract trial 12 data for later comparison
 surface_9 <- average_surface_cumulative %>% 
@@ -639,9 +637,7 @@ average_surface_binned <- binned_surface %>%
   ) %>%
   mutate(log_area = log10(Area),
          log_count_bin = log10(Average_Count),
-         log_scatter_bin = log10(Average_Scatter),
-         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin),
-         log_scatter_bin = ifelse(log_scatter_bin < 0, 0, log_scatter_bin))
+         log_scatter_bin = log10(Average_Scatter))
 
 
 
@@ -737,9 +733,7 @@ average_edge_cumulative <- cumulative_edge %>%
   ) %>%
   mutate(log_area = log10(Area),
          log_count = log10(Average_Count),
-         log_scatter = log10(Average_Scatter),
-         log_count = ifelse(log_count < 0, 0, log_count),
-         log_scatter = ifelse(log_scatter < 0, 0, log_scatter)) %>% 
+         log_scatter = log10(Average_Scatter)) %>% 
   arrange(Trial, desc(Area)) 
 
 edge_9 <- average_edge_cumulative %>% 
@@ -791,9 +785,7 @@ average_edge_binned <- binned_edge %>%
   ) %>%
   mutate(log_area = log10(Area),
          log_count_bin = log10(Average_Count),
-         log_scatter_bin = log10(Average_Scatter),
-         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin),
-         log_scatter_bin = ifelse(log_scatter_bin < 0, 0, log_scatter_bin))
+         log_scatter_bin = log10(Average_Scatter))
 
 
 edge_9_binned <- average_edge_binned %>% 
@@ -6230,6 +6222,74 @@ ggplot() +
     subtitle = "Sky Blue: Sample 1, Navy Blue: Sample 2, Green: Sample 3, Purple: Sample 4, Orange: Sample 5") +
   custom_theme
 
+
+ggplot() +
+  geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 13 & Sample == "1"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#56B4E9", 
+            linetype = "solid") +
+    geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 13 & Sample == "2"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#0072B2", 
+            linetype = "dashed") +
+    geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 13 & Sample == "3"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#009E73", 
+                  linetype = "dotted") +
+    geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 13 & Sample == "4"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#CC79A7", 
+                  linetype = "dotdash") +
+    geom_line(data = cw_cumulative_surface %>% 
+              filter(Trial == 13 & Sample == "5"),
+            aes(x = log10(Area), y = log10(Cumulative_Count)),
+            color = "#D55E00", 
+                  linetype = "longdash") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Calibration Surface Analysis 13 - Samples : Cumulative Particle Area Distribution over 0.1 square meters",
+    subtitle = "Sky Blue: Sample 1, Navy Blue: Sample 2, Green: Sample 3, Purple: Sample 4, Orange: Sample 5") +
+  custom_theme
+
+ggplot() +
+  geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 13 & Sample == "1"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#56B4E9", 
+            linetype = "solid") +
+    geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 13 & Sample == "2"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#0072B2", 
+            linetype = "dashed") +
+    geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 13 & Sample == "3"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#009E73", 
+                  linetype = "dotted") +
+    geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 13 & Sample == "4"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#CC79A7", 
+                  linetype = "dotdash") +
+    geom_line(data = cw_binned_surface %>% 
+              filter(Trial == 13 & Sample == "5"),
+            aes(x = log10(Area), y = log10(Positive_Count_Diff)),
+            color = "#D55E00", 
+                  linetype = "longdash") +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Calibration Surface Analysis 13 - Samples : Binned Particle Area Distribution over 0.1 square meters",
+    subtitle = "Sky Blue: Sample 1, Navy Blue: Sample 2, Green: Sample 3, Purple: Sample 4, Orange: Sample 5") +
+  custom_theme
+
+
 ggplot() +
   geom_line(data = cw_cumulative_edge %>% 
               filter(Trial == 13 & Sample == "36"),
@@ -8733,7 +8793,7 @@ ggsave("particle_distribution_comparison1.png", complete_grid, width = 40, heigh
 
 ### 10.2 Graph Comparison Graphic Scatter
 ```{r}
-# Create a comprehensive comparison grid showing all trials and analysis types for scatter data
+# 10.2 Create a comprehensive comparison grid showing all trials and analysis types for scatter data
 library(tidyverse)
 library(gridExtra)
 library(grid)
@@ -9707,6 +9767,2490 @@ ggsave("particle_scatter_distribution_comparison.png", scatter_grid, width = 40,
 ```
 
 
+### 10.3 Graph Comparison Graphic - Normalized Count
+
+```{r normalized_count_comparison}
+# Create a comprehensive comparison grid showing all trials and analysis types with normalized counts
+# This normalization makes it easier to compare slopes across different trials
+library(tidyverse)
+library(gridExtra)
+library(grid)
+
+# Define trials in the requested order
+trial_order <- c(9, 10, 11, 12, 13, 14)
+
+# Custom theme for consistent appearance with minimal margins
+compact_theme <- theme_minimal() +
+  theme(
+    plot.title = element_blank(),  # Remove individual plot titles
+    plot.margin = margin(2, 2, 2, 2, "pt"),  # Minimize plot margins
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    legend.position = "none",
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  )
+
+# Function to normalize log count data directly
+normalize_count_data <- function(data, count_col) {
+  data %>%
+    mutate(
+      # Get the log count values (already in log scale)
+      log_count_value = get(count_col),
+      
+      # Handle invalid values
+      log_count_clean = case_when(
+        is.na(log_count_value) ~ -Inf,
+        is.infinite(log_count_value) & log_count_value < 0 ~ -Inf,
+        log_count_value < -10 ~ -Inf,  # Very small log values become -Inf
+        TRUE ~ log_count_value
+      ),
+      
+      # Determine if this is cumulative or binned data based on column name
+      is_binned = grepl("bin", count_col, ignore.case = TRUE),
+      
+      # For normalization, we'll work directly with log values
+      # Find the range of valid log values
+      valid_logs = log_count_clean[is.finite(log_count_clean)],
+      min_valid_log = ifelse(length(valid_logs) > 0, min(valid_logs, na.rm = TRUE), 0),
+      max_valid_log = ifelse(length(valid_logs) > 0, max(valid_logs, na.rm = TRUE), 0),
+      log_range = max_valid_log - min_valid_log,
+      
+      # Normalize log values to 0-1 range
+      normalized_count = case_when(
+        !is.finite(log_count_clean) ~ 0,
+        log_range == 0 ~ 0.5,  # If all values are the same, set to middle
+        TRUE ~ (log_count_clean - min_valid_log) / log_range
+      )
+    ) %>%
+    # Clean up intermediate columns
+    select(-log_count_value, -log_count_clean, -is_binned, -valid_logs, 
+           -min_valid_log, -max_valid_log, -log_range)
+}
+
+# Create lists to store plots
+surface_cumulative_norm_plots <- list()
+surface_binned_norm_plots <- list()
+edge_cumulative_norm_plots <- list()
+edge_binned_norm_plots <- list()
+
+# Create logging lists to track missing data
+missing_data_log <- list()
+
+# Function to create a fallback plot when NO data is available
+create_fallback_plot <- function() {
+  ggplot() + 
+    annotate("text", x = 2, y = 2, label = "No data available") +
+    theme_minimal() +
+    theme(plot.margin = margin(2, 2, 2, 2, "pt")) +
+    labs(x = expression(log[10](Area)), y = "Normalized Count")
+}
+
+# Helper function to check for column names
+get_column_name <- function(data, possible_names) {
+  for (name in possible_names) {
+    if (name %in% names(data)) {
+      return(name)
+    }
+  }
+  return(NULL)
+}
+
+# Function to log missing data
+log_missing_data <- function(trial_num, plot_type, dataset_name, reason) {
+  log_entry <- paste0("Trial ", trial_num, " - ", plot_type, " - ", dataset_name, ": ", reason)
+  missing_data_log <<- append(missing_data_log, log_entry)
+  message(log_entry)
+}
+
+# Generate plots for each trial with error handling and normalization
+for (i in 1:length(trial_order)) {
+  trial_num <- trial_order[i]
+  
+  # 1. Surface cumulative plots with normalization
+  tryCatch({
+    # Initialize variables to track successful line additions
+    lines_added <- 0
+    
+    # Base plot for surface cumulative
+    p_surf_cum <- ggplot()
+    
+    # Try to add surface data
+    if(exists(paste0("surface_", trial_num))) {
+      surface_data <- get(paste0("surface_", trial_num))
+      area_col <- get_column_name(surface_data, c("log_area", "Area"))
+      count_col <- get_column_name(surface_data, c("log_count", "Count", "Average_Count"))
+      
+      if (!is.null(area_col) && !is.null(count_col)) {
+        surface_norm <- normalize_count_data(surface_data, count_col)
+        p_surf_cum <- p_surf_cum + 
+          geom_line(data = surface_norm,
+                    aes_string(x = area_col, y = "normalized_count"),
+                    color = "#D55E00", 
+                    linetype = "solid")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Surface Cumulative", "Surface", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Surface Cumulative", "Surface", "Dataset does not exist")
+    }
+    
+    # Try to add witness data
+    if(exists(paste0("wit_surface_", trial_num))) {
+      witness_data <- get(paste0("wit_surface_", trial_num))
+      wit_area_col <- get_column_name(witness_data, c("log_area", "Area"))
+      wit_count_col <- get_column_name(witness_data, c("log_count", "Count", "Average_Count"))
+      
+      if (!is.null(wit_area_col) && !is.null(wit_count_col)) {
+        witness_norm <- normalize_count_data(witness_data, wit_count_col)
+        p_surf_cum <- p_surf_cum + 
+          geom_line(data = witness_norm,
+                    aes_string(x = wit_area_col, y = "normalized_count"),
+                    color = "#009E73", 
+                    linetype = "dashed")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Surface Cumulative", "Witness", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Surface Cumulative", "Witness", "Dataset does not exist")
+    }
+    
+    # Try to add calibration data for trials 12-14
+    if(trial_num %in% c(12, 13, 14)) {
+      if(exists(paste0("cw_surface_", trial_num))) {
+        cw_data <- get(paste0("cw_surface_", trial_num))
+        cw_area_col <- get_column_name(cw_data, c("log_area", "Area"))
+        cw_count_col <- get_column_name(cw_data, c("log_count", "Count", "Average_Count"))
+        
+        if (!is.null(cw_area_col) && !is.null(cw_count_col)) {
+          cw_norm <- normalize_count_data(cw_data, cw_count_col)
+          p_surf_cum <- p_surf_cum +
+            geom_line(data = cw_norm,
+                      aes_string(x = cw_area_col, y = "normalized_count"),
+                      color = "#CC79A7", 
+                      linetype = "dotted")
+          lines_added <- lines_added + 1
+        } else {
+          log_missing_data(trial_num, "Surface Cumulative", "Calibration", "Missing required columns")
+        }
+      } else {
+        log_missing_data(trial_num, "Surface Cumulative", "Calibration", "Dataset does not exist")
+      }
+    }
+    
+    # Only use fallback if NO lines were added
+    if(lines_added == 0) {
+      surface_cumulative_norm_plots[[i]] <- create_fallback_plot()
+      log_missing_data(trial_num, "Surface Cumulative", "ALL", "No data lines available - using fallback")
+    } else {
+      # Finalize surface cumulative plot with minimal spacing
+      p_surf_cum <- p_surf_cum +
+        labs(
+          x = expression(log[10](Area)),
+          y = "Normalized Count"
+        ) +
+        compact_theme
+      
+      surface_cumulative_norm_plots[[i]] <- p_surf_cum
+    }
+  }, error = function(e) {
+    surface_cumulative_norm_plots[[i]] <<- create_fallback_plot()
+    log_missing_data(trial_num, "Surface Cumulative", "ERROR", paste("Error occurred:", e$message))
+  })
+  
+  # 2. Surface binned plots with normalization
+  tryCatch({
+    lines_added <- 0
+    p_surf_bin <- ggplot()
+    
+    # Try to add surface binned data
+    if(exists(paste0("surface_", trial_num, "_binned"))) {
+      surface_bin_data <- get(paste0("surface_", trial_num, "_binned"))
+      bin_area_col <- get_column_name(surface_bin_data, c("log_area", "Area"))
+      bin_count_col <- get_column_name(surface_bin_data, c("log_count_bin"))
+      
+      if (!is.null(bin_area_col) && !is.null(bin_count_col)) {
+        surface_bin_norm <- normalize_count_data(surface_bin_data, bin_count_col)
+        p_surf_bin <- p_surf_bin + 
+          geom_line(data = surface_bin_norm,
+                    aes_string(x = bin_area_col, y = "normalized_count"),
+                    color = "#D55E00", 
+                    linetype = "solid")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Surface Binned", "Surface", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Surface Binned", "Surface", "Dataset does not exist")
+    }
+    
+    # Try to add witness binned data
+    if(exists(paste0("wit_surface_", trial_num, "_binned"))) {
+      witness_bin_data <- get(paste0("wit_surface_", trial_num, "_binned"))
+      wit_bin_area_col <- get_column_name(witness_bin_data, c("log_area", "Area"))
+      wit_bin_count_col <- get_column_name(witness_bin_data, c("log_count_bin"))
+      
+      if (!is.null(wit_bin_area_col) && !is.null(wit_bin_count_col)) {
+        witness_bin_norm <- normalize_count_data(witness_bin_data, wit_bin_count_col)
+        p_surf_bin <- p_surf_bin + 
+          geom_line(data = witness_bin_norm,
+                    aes_string(x = wit_bin_area_col, y = "normalized_count"),
+                    color = "#009E73", 
+                    linetype = "dashed")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Surface Binned", "Witness", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Surface Binned", "Witness", "Dataset does not exist")
+    }
+    
+    # Try to add calibration binned data for trials 12-14
+    if(trial_num %in% c(12, 13, 14)) {
+      if(exists(paste0("cw_surface_", trial_num, "_binned"))) {
+        cw_bin_data <- get(paste0("cw_surface_", trial_num, "_binned"))
+        cw_bin_area_col <- get_column_name(cw_bin_data, c("log_area", "Area"))
+        cw_bin_count_col <- get_column_name(cw_bin_data, c("log_count_bin"))
+        
+        if (!is.null(cw_bin_area_col) && !is.null(cw_bin_count_col)) {
+          cw_bin_norm <- normalize_count_data(cw_bin_data, cw_bin_count_col)
+          p_surf_bin <- p_surf_bin +
+            geom_line(data = cw_bin_norm,
+                      aes_string(x = cw_bin_area_col, y = "normalized_count"),
+                      color = "#CC79A7", 
+                      linetype = "dotted")
+          lines_added <- lines_added + 1
+        } else {
+          log_missing_data(trial_num, "Surface Binned", "Calibration", "Missing required columns")
+        }
+      } else {
+        log_missing_data(trial_num, "Surface Binned", "Calibration", "Dataset does not exist")
+      }
+    }
+    
+    # Only use fallback if NO lines were added
+    if(lines_added == 0) {
+      surface_binned_norm_plots[[i]] <- create_fallback_plot()
+      log_missing_data(trial_num, "Surface Binned", "ALL", "No data lines available - using fallback")
+    } else {
+      p_surf_bin <- p_surf_bin +
+        labs(
+          x = expression(log[10](Area)),
+          y = "Normalized Count"
+        ) +
+        compact_theme
+      
+      surface_binned_norm_plots[[i]] <- p_surf_bin
+    }
+  }, error = function(e) {
+    surface_binned_norm_plots[[i]] <<- create_fallback_plot()
+    log_missing_data(trial_num, "Surface Binned", "ERROR", paste("Error occurred:", e$message))
+  })
+  
+  # 3. Edge cumulative plots with normalization
+  tryCatch({
+    lines_added <- 0
+    p_edge_cum <- ggplot()
+    
+    # Try to add edge data
+    if(exists(paste0("edge_", trial_num))) {
+      edge_data <- get(paste0("edge_", trial_num))
+      edge_area_col <- get_column_name(edge_data, c("log_area", "Area"))
+      edge_count_col <- get_column_name(edge_data, c("log_count", "Count", "Average_Count"))
+      
+      if (!is.null(edge_area_col) && !is.null(edge_count_col)) {
+        edge_norm <- normalize_count_data(edge_data, edge_count_col)
+        p_edge_cum <- p_edge_cum + 
+          geom_line(data = edge_norm,
+                    aes_string(x = edge_area_col, y = "normalized_count"),
+                    color = "#CC79A7", 
+                    linetype = "solid")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative", "Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Cumulative", "Edge", "Dataset does not exist")
+    }
+    
+    # Try to add cw_edge data
+    if(exists(paste0("cw_edge_", trial_num))) {
+      cw_edge_data <- get(paste0("cw_edge_", trial_num))
+      cw_edge_area_col <- get_column_name(cw_edge_data, c("log_area", "Area"))
+      cw_edge_count_col <- get_column_name(cw_edge_data, c("log_count", "Count", "Average_Count"))
+      
+      if (!is.null(cw_edge_area_col) && !is.null(cw_edge_count_col)) {
+        cw_edge_norm <- normalize_count_data(cw_edge_data, cw_edge_count_col)
+        p_edge_cum <- p_edge_cum + 
+          geom_line(data = cw_edge_norm,
+                    aes_string(x = cw_edge_area_col, y = "normalized_count"),
+                    color = "#0072B2", 
+                    linetype = "dashed")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative", "CW_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Cumulative", "CW_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add model_edge data
+    if(exists(paste0("model_edge_", trial_num))) {
+      model_edge_data <- get(paste0("model_edge_", trial_num))
+      model_edge_area_col <- get_column_name(model_edge_data, c("log_area", "Area"))
+      model_edge_count_col <- get_column_name(model_edge_data, c("log_count", "Count", "Average_Count"))
+      
+      if (!is.null(model_edge_area_col) && !is.null(model_edge_count_col)) {
+        model_edge_norm <- normalize_count_data(model_edge_data, model_edge_count_col)
+        p_edge_cum <- p_edge_cum + 
+          geom_line(data = model_edge_norm,
+                    aes_string(x = model_edge_area_col, y = "normalized_count"),
+                    color = "#009E73", 
+                    linetype = "dotted")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative", "Model_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Cumulative", "Model_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add SSLSM_edge data
+    if(exists(paste0("SSLSM_edge_", trial_num))) {
+      SSLSM_edge_data <- get(paste0("SSLSM_edge_", trial_num))
+      SSLSM_edge_area_col <- get_column_name(SSLSM_edge_data, c("log_area", "Area"))
+      SSLSM_edge_count_col <- get_column_name(SSLSM_edge_data, c("log_count", "Count", "Average_Count", "Cumulative_Count"))
+      
+      if (!is.null(SSLSM_edge_area_col) && !is.null(SSLSM_edge_count_col)) {
+        SSLSM_edge_norm <- normalize_count_data(SSLSM_edge_data, SSLSM_edge_count_col)
+        p_edge_cum <- p_edge_cum + 
+          geom_line(data = SSLSM_edge_norm,
+                    aes_string(x = SSLSM_edge_area_col, y = "normalized_count"),
+                    color = "#D55E00", 
+                    linetype = "dotdash")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative", "SSLSM_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Cumulative", "SSLSM_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add WSLSM_edge data
+    if(exists(paste0("WSLSM_edge_", trial_num))) {
+      WSLSM_edge_data <- get(paste0("WSLSM_edge_", trial_num))
+      WSLSM_edge_area_col <- get_column_name(WSLSM_edge_data, c("log_area", "Area"))
+      WSLSM_edge_count_col <- get_column_name(WSLSM_edge_data, c("log_count", "Count", "Average_Count", "Cumulative_Count"))
+      
+      if (!is.null(WSLSM_edge_area_col) && !is.null(WSLSM_edge_count_col)) {
+        WSLSM_edge_norm <- normalize_count_data(WSLSM_edge_data, WSLSM_edge_count_col)
+        p_edge_cum <- p_edge_cum + 
+          geom_line(data = WSLSM_edge_norm,
+                    aes_string(x = WSLSM_edge_area_col, y = "normalized_count"),
+                    color = "#56B4E9", 
+                    linetype = "longdash")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative", "WSLSM_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Cumulative", "WSLSM_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add calibration SLSM data for trials 12-14
+    if(trial_num %in% c(12, 13, 14)) {
+      if(exists(paste0("CSLSM_edge_", trial_num))) {
+        CSLSM_edge_data <- get(paste0("CSLSM_edge_", trial_num))
+        CSLSM_edge_area_col <- get_column_name(CSLSM_edge_data, c("log_area", "Area"))
+        CSLSM_edge_count_col <- get_column_name(CSLSM_edge_data, c("log_count", "Count", "Average_Count", "Cumulative_Count"))
+        
+        if (!is.null(CSLSM_edge_area_col) && !is.null(CSLSM_edge_count_col)) {
+          CSLSM_edge_norm <- normalize_count_data(CSLSM_edge_data, CSLSM_edge_count_col)
+          p_edge_cum <- p_edge_cum +
+            geom_line(data = CSLSM_edge_norm,
+                      aes_string(x = CSLSM_edge_area_col, y = "normalized_count"),
+                      color = "#F0E442", 
+                      linetype = "twodash")
+          lines_added <- lines_added + 1
+        } else {
+          log_missing_data(trial_num, "Edge Cumulative", "CSLSM_Edge", "Missing required columns")
+        }
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative", "CSLSM_Edge", "Dataset does not exist")
+      }
+    }
+    
+    # Only use fallback if NO lines were added
+    if(lines_added == 0) {
+      edge_cumulative_norm_plots[[i]] <- create_fallback_plot()
+      log_missing_data(trial_num, "Edge Cumulative", "ALL", "No data lines available - using fallback")
+    } else {
+      p_edge_cum <- p_edge_cum +
+        labs(
+          x = expression(log[10](Area)),
+          y = "Normalized Count"
+        ) +
+        compact_theme
+      
+      edge_cumulative_norm_plots[[i]] <- p_edge_cum
+    }
+  }, error = function(e) {
+    edge_cumulative_norm_plots[[i]] <<- create_fallback_plot()
+    log_missing_data(trial_num, "Edge Cumulative", "ERROR", paste("Error occurred:", e$message))
+  })
+  
+  # 4. Edge binned plots with normalization
+  tryCatch({
+    lines_added <- 0
+    p_edge_bin <- ggplot()
+    
+    # Try to add edge binned data
+    if(exists(paste0("edge_", trial_num, "_binned"))) {
+      edge_bin_data <- get(paste0("edge_", trial_num, "_binned"))
+      edge_bin_area_col <- get_column_name(edge_bin_data, c("log_area", "Area"))
+      edge_bin_count_col <- get_column_name(edge_bin_data, c("log_count_bin"))
+      
+      if (!is.null(edge_bin_area_col) && !is.null(edge_bin_count_col)) {
+        edge_bin_norm <- normalize_count_data(edge_bin_data, edge_bin_count_col)
+        p_edge_bin <- p_edge_bin + 
+          geom_line(data = edge_bin_norm,
+                    aes_string(x = edge_bin_area_col, y = "normalized_count"),
+                    color = "#CC79A7", 
+                    linetype = "solid")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Binned", "Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Binned", "Edge", "Dataset does not exist")
+    }
+    
+    # Try to add cw_edge binned data
+    if(exists(paste0("cw_edge_", trial_num, "_binned"))) {
+      cw_edge_bin_data <- get(paste0("cw_edge_", trial_num, "_binned"))
+      cw_edge_bin_area_col <- get_column_name(cw_edge_bin_data, c("log_area", "Area"))
+      cw_edge_bin_count_col <- get_column_name(cw_edge_bin_data, c("log_count_bin"))
+      
+      if (!is.null(cw_edge_bin_area_col) && !is.null(cw_edge_bin_count_col)) {
+        cw_edge_bin_norm <- normalize_count_data(cw_edge_bin_data, cw_edge_bin_count_col)
+        p_edge_bin <- p_edge_bin + 
+          geom_line(data = cw_edge_bin_norm,
+                    aes_string(x = cw_edge_bin_area_col, y = "normalized_count"),
+                    color = "#0072B2", 
+                    linetype = "dashed")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Binned", "CW_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Binned", "CW_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add model_edge binned data
+    if(exists(paste0("model_edge_", trial_num, "_binned"))) {
+      model_edge_bin_data <- get(paste0("model_edge_", trial_num, "_binned"))
+      model_edge_bin_area_col <- get_column_name(model_edge_bin_data, c("log_area", "Area"))
+      model_edge_bin_count_col <- get_column_name(model_edge_bin_data, c("log_count_bin"))
+      
+      if (!is.null(model_edge_bin_area_col) && !is.null(model_edge_bin_count_col)) {
+        model_edge_bin_norm <- normalize_count_data(model_edge_bin_data, model_edge_bin_count_col)
+        p_edge_bin <- p_edge_bin + 
+          geom_line(data = model_edge_bin_norm,
+                    aes_string(x = model_edge_bin_area_col, y = "normalized_count"),
+                    color = "#009E73", 
+                    linetype = "dotted")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Binned", "Model_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Binned", "Model_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add SSLSM_edge binned data
+    if(exists(paste0("SSLSM_edge_", trial_num, "_binned"))) {
+      SSLSM_edge_bin_data <- get(paste0("SSLSM_edge_", trial_num, "_binned"))
+      SSLSM_edge_bin_area_col <- get_column_name(SSLSM_edge_bin_data, c("log_area", "Area"))
+      SSLSM_edge_bin_count_col <- get_column_name(SSLSM_edge_bin_data, c("log_count_bin"))
+      
+      if (!is.null(SSLSM_edge_bin_area_col) && !is.null(SSLSM_edge_bin_count_col)) {
+        SSLSM_edge_bin_norm <- normalize_count_data(SSLSM_edge_bin_data, SSLSM_edge_bin_count_col)
+        p_edge_bin <- p_edge_bin + 
+          geom_line(data = SSLSM_edge_bin_norm,
+                    aes_string(x = SSLSM_edge_bin_area_col, y = "normalized_count"),
+                    color = "#D55E00", 
+                    linetype = "dotdash")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Binned", "SSLSM_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Binned", "SSLSM_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add WSLSM_edge binned data
+    if(exists(paste0("WSLSM_edge_", trial_num, "_binned"))) {
+      WSLSM_edge_bin_data <- get(paste0("WSLSM_edge_", trial_num, "_binned"))
+      WSLSM_edge_bin_area_col <- get_column_name(WSLSM_edge_bin_data, c("log_area", "Area"))
+      WSLSM_edge_bin_count_col <- get_column_name(WSLSM_edge_bin_data, c("log_count_bin"))
+      
+      if (!is.null(WSLSM_edge_bin_area_col) && !is.null(WSLSM_edge_bin_count_col)) {
+        WSLSM_edge_bin_norm <- normalize_count_data(WSLSM_edge_bin_data, WSLSM_edge_bin_count_col)
+        p_edge_bin <- p_edge_bin + 
+          geom_line(data = WSLSM_edge_bin_norm,
+                    aes_string(x = WSLSM_edge_bin_area_col, y = "normalized_count"),
+                    color = "#56B4E9", 
+                    linetype = "longdash")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Binned", "WSLSM_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Binned", "WSLSM_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add calibration SLSM binned data for trials 12-14
+    if(trial_num %in% c(12, 13, 14)) {
+      if(exists(paste0("CSLSM_edge_", trial_num, "_binned"))) {
+        CSLSM_edge_bin_data <- get(paste0("CSLSM_edge_", trial_num, "_binned"))
+        CSLSM_edge_bin_area_col <- get_column_name(CSLSM_edge_bin_data, c("log_area", "Area"))
+        CSLSM_edge_bin_count_col <- get_column_name(CSLSM_edge_bin_data, c("log_count_bin"))
+        
+        if (!is.null(CSLSM_edge_bin_area_col) && !is.null(CSLSM_edge_bin_count_col)) {
+          CSLSM_edge_bin_norm <- normalize_count_data(CSLSM_edge_bin_data, CSLSM_edge_bin_count_col)
+          p_edge_bin <- p_edge_bin +
+            geom_line(data = CSLSM_edge_bin_norm,
+                      aes_string(x = CSLSM_edge_bin_area_col, y = "normalized_count"),
+                      color = "#F0E442", 
+                      linetype = "twodash")
+          lines_added <- lines_added + 1
+        } else {
+          log_missing_data(trial_num, "Edge Binned", "CSLSM_Edge", "Missing required columns")
+        }
+      } else {
+        log_missing_data(trial_num, "Edge Binned", "CSLSM_Edge", "Dataset does not exist")
+      }
+    }
+    
+    # Only use fallback if NO lines were added
+    if(lines_added == 0) {
+      edge_binned_norm_plots[[i]] <- create_fallback_plot()
+      log_missing_data(trial_num, "Edge Binned", "ALL", "No data lines available - using fallback")
+    } else {
+      p_edge_bin <- p_edge_bin +
+        labs(
+          x = expression(log[10](Area)),
+          y = "Normalized Count"
+        ) +
+        compact_theme
+      
+      edge_binned_norm_plots[[i]] <- p_edge_bin
+    }
+  }, error = function(e) {
+    edge_binned_norm_plots[[i]] <<- create_fallback_plot()
+    log_missing_data(trial_num, "Edge Binned", "ERROR", paste("Error occurred:", e$message))
+  })
+}
+
+# Add the average plots with normalization and logging
+# Surface cumulative average
+tryCatch({
+  lines_added_avg <- 0
+  lines_added_air <- 0
+  
+  surface_avg_cum_norm_plot <- ggplot()
+  surface_avg_air_cum_norm_plot <- ggplot()
+  
+  # Try standard average data
+  if(exists("surface_average")) {
+    s_avg_area_col <- get_column_name(surface_average, c("log_area", "Area"))
+    s_avg_count_col <- get_column_name(surface_average, c("log_count", "Count", "Average_Count"))
+    
+    if (!is.null(s_avg_area_col) && !is.null(s_avg_count_col)) {
+      surface_avg_norm <- normalize_count_data(surface_average, s_avg_count_col)
+      surface_avg_cum_norm_plot <- surface_avg_cum_norm_plot +
+        geom_line(data = surface_avg_norm,
+                  aes_string(x = s_avg_area_col, y = "normalized_count"),
+                  color = "#D55E00", 
+                  linetype = "solid")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Cumulative", "Surface", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Cumulative", "Surface", "Dataset does not exist")
+  }
+  
+  if(exists("wit_surface_average")) {
+    wit_avg_area_col <- get_column_name(wit_surface_average, c("log_area", "Area"))
+    wit_avg_count_col <- get_column_name(wit_surface_average, c("log_count", "Count", "Average_Count"))
+    
+    if (!is.null(wit_avg_area_col) && !is.null(wit_avg_count_col)) {
+      wit_avg_norm <- normalize_count_data(wit_surface_average, wit_avg_count_col)
+      surface_avg_cum_norm_plot <- surface_avg_cum_norm_plot +
+        geom_line(data = wit_avg_norm,
+                  aes_string(x = wit_avg_area_col, y = "normalized_count"),
+                  color = "#009E73", 
+                  linetype = "dashed")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Cumulative", "Witness", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Cumulative", "Witness", "Dataset does not exist")
+  }
+  
+  if(exists("cw_surface_average")) {
+    cw_avg_area_col <- get_column_name(cw_surface_average, c("log_area", "Area"))
+    cw_avg_count_col <- get_column_name(cw_surface_average, c("log_count", "Count", "Average_Count"))
+    
+    if (!is.null(cw_avg_area_col) && !is.null(cw_avg_count_col)) {
+      cw_avg_norm <- normalize_count_data(cw_surface_average, cw_avg_count_col)
+      surface_avg_cum_norm_plot <- surface_avg_cum_norm_plot +
+        geom_line(data = cw_avg_norm,
+                  aes_string(x = cw_avg_area_col, y = "normalized_count"),
+                  color = "#CC79A7", 
+                  linetype = "dotted")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Cumulative", "Calibration", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Cumulative", "Calibration", "Dataset does not exist")
+  }
+  
+  # Try air average data
+  if(exists("surface_average_air")) {
+    s_avg_air_area_col <- get_column_name(surface_average_air, c("log_area", "Area"))
+    s_avg_air_count_col <- get_column_name(surface_average_air, c("log_count", "Count", "Average_Count"))
+    
+    if (!is.null(s_avg_air_area_col) && !is.null(s_avg_air_count_col)) {
+      surface_avg_air_norm <- normalize_count_data(surface_average_air, s_avg_air_count_col)
+      surface_avg_air_cum_norm_plot <- surface_avg_air_cum_norm_plot +
+        geom_line(data = surface_avg_air_norm,
+                  aes_string(x = s_avg_air_area_col, y = "normalized_count"),
+                  color = "#D55E00", 
+                  linetype = "solid")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Cumulative", "Surface", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Cumulative", "Surface", "Dataset does not exist")
+  }
+  
+  if(exists("wit_surface_average_air")) {
+    wit_avg_air_area_col <- get_column_name(wit_surface_average_air, c("log_area", "Area"))
+    wit_avg_air_count_col <- get_column_name(wit_surface_average_air, c("log_count", "Count", "Average_Count"))
+    
+    if (!is.null(wit_avg_air_area_col) && !is.null(wit_avg_air_count_col)) {
+      wit_avg_air_norm <- normalize_count_data(wit_surface_average_air, wit_avg_air_count_col)
+      surface_avg_air_cum_norm_plot <- surface_avg_air_cum_norm_plot +
+        geom_line(data = wit_avg_air_norm,
+                  aes_string(x = wit_avg_air_area_col, y = "normalized_count"),
+                  color = "#009E73", 
+                  linetype = "dashed")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Cumulative", "Witness", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Cumulative", "Witness", "Dataset does not exist")
+  }
+  
+  if(exists("cw_surface_average_air")) {
+    cw_avg_air_area_col <- get_column_name(cw_surface_average_air, c("log_area", "Area"))
+    cw_avg_air_count_col <- get_column_name(cw_surface_average_air, c("log_count", "Count", "Average_Count"))
+    
+    if (!is.null(cw_avg_air_area_col) && !is.null(cw_avg_air_count_col)) {
+      cw_avg_air_norm <- normalize_count_data(cw_surface_average_air, cw_avg_air_count_col)
+      surface_avg_air_cum_norm_plot <- surface_avg_air_cum_norm_plot +
+        geom_line(data = cw_avg_air_norm,
+                  aes_string(x = cw_avg_air_area_col, y = "normalized_count"),
+                  color = "#CC79A7", 
+                  linetype = "dotted")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Cumulative", "Calibration", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Cumulative", "Calibration", "Dataset does not exist")
+  }
+  
+  # Finalize plots or use fallback
+  if(lines_added_avg == 0) {
+    surface_cumulative_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+    log_missing_data("Average", "Surface Cumulative", "ALL", "No data lines available - using fallback")
+  } else {
+    surface_avg_cum_norm_plot <- surface_avg_cum_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Count"
+      ) +
+      compact_theme
+    surface_cumulative_norm_plots[[length(trial_order) + 1]] <- surface_avg_cum_norm_plot
+  }
+  
+  if(lines_added_air == 0) {
+    surface_cumulative_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+    log_missing_data("Air Average", "Surface Cumulative", "ALL", "No data lines available - using fallback")
+  } else {
+    surface_avg_air_cum_norm_plot <- surface_avg_air_cum_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Count"
+      ) +
+      compact_theme
+    surface_cumulative_norm_plots[[length(trial_order) + 2]] <- surface_avg_air_cum_norm_plot
+  }
+}, error = function(e) {
+  surface_cumulative_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+  surface_cumulative_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+  log_missing_data("Average", "Surface Cumulative", "ERROR", paste("Error occurred:", e$message))
+})
+
+# Surface binned average with normalization and logging
+tryCatch({
+  lines_added_avg <- 0
+  lines_added_air <- 0
+  
+  surface_avg_bin_norm_plot <- ggplot()
+  surface_avg_air_bin_norm_plot <- ggplot()
+  
+  # Try standard average binned data
+  if(exists("surface_average_binned")) {
+    s_avg_bin_area_col <- get_column_name(surface_average_binned, c("log_area", "Area"))
+    s_avg_bin_count_col <- get_column_name(surface_average_binned, c("log_count_bin"))
+    
+    if (!is.null(s_avg_bin_area_col) && !is.null(s_avg_bin_count_col)) {
+      surface_avg_bin_norm <- normalize_count_data(surface_average_binned, s_avg_bin_count_col)
+      surface_avg_bin_norm_plot <- surface_avg_bin_norm_plot +
+        geom_line(data = surface_avg_bin_norm,
+                  aes_string(x = s_avg_bin_area_col, y = "normalized_count"),
+                  color = "#D55E00", 
+                  linetype = "solid")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Binned", "Surface", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Binned", "Surface", "Dataset does not exist")
+  }
+  
+  if(exists("wit_surface_average_binned")) {
+    wit_avg_bin_area_col <- get_column_name(wit_surface_average_binned, c("log_area", "Area"))
+    wit_avg_bin_count_col <- get_column_name(wit_surface_average_binned, c("log_count_bin"))
+    
+    if (!is.null(wit_avg_bin_area_col) && !is.null(wit_avg_bin_count_col)) {
+      wit_avg_bin_norm <- normalize_count_data(wit_surface_average_binned, wit_avg_bin_count_col)
+      surface_avg_bin_norm_plot <- surface_avg_bin_norm_plot +
+        geom_line(data = wit_avg_bin_norm,
+                  aes_string(x = wit_avg_bin_area_col, y = "normalized_count"),
+                  color = "#009E73", 
+                  linetype = "dashed")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Binned", "Witness", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Binned", "Witness", "Dataset does not exist")
+  }
+  
+  if(exists("cw_surface_average_binned")) {
+    cw_avg_bin_area_col <- get_column_name(cw_surface_average_binned, c("log_area", "Area"))
+    cw_avg_bin_count_col <- get_column_name(cw_surface_average_binned, c("log_count_bin"))
+    
+    if (!is.null(cw_avg_bin_area_col) && !is.null(cw_avg_bin_count_col)) {
+      cw_avg_bin_norm <- normalize_count_data(cw_surface_average_binned, cw_avg_bin_count_col)
+      surface_avg_bin_norm_plot <- surface_avg_bin_norm_plot +
+        geom_line(data = cw_avg_bin_norm,
+                  aes_string(x = cw_avg_bin_area_col, y = "normalized_count"),
+                  color = "#CC79A7", 
+                  linetype = "dotted")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Binned", "Calibration", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Binned", "Calibration", "Dataset does not exist")
+  }
+  
+  # Try air average binned data
+  if(exists("surface_average_air_binned")) {
+    s_avg_air_bin_area_col <- get_column_name(surface_average_air_binned, c("log_area", "Area"))
+    s_avg_air_bin_count_col <- get_column_name(surface_average_air_binned, c("log_count_bin"))
+    
+    if (!is.null(s_avg_air_bin_area_col) && !is.null(s_avg_air_bin_count_col)) {
+      surface_avg_air_bin_norm <- normalize_count_data(surface_average_air_binned, s_avg_air_bin_count_col)
+      surface_avg_air_bin_norm_plot <- surface_avg_air_bin_norm_plot +
+        geom_line(data = surface_avg_air_bin_norm,
+                  aes_string(x = s_avg_air_bin_area_col, y = "normalized_count"),
+                  color = "#D55E00", 
+                  linetype = "solid")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Binned", "Surface", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Binned", "Surface", "Dataset does not exist")
+  }
+  
+  if(exists("wit_surface_average_air_binned")) {
+    wit_avg_air_bin_area_col <- get_column_name(wit_surface_average_air_binned, c("log_area", "Area"))
+    wit_avg_air_bin_count_col <- get_column_name(wit_surface_average_air_binned, c("log_count_bin"))
+    
+    if (!is.null(wit_avg_air_bin_area_col) && !is.null(wit_avg_air_bin_count_col)) {
+      wit_avg_air_bin_norm <- normalize_count_data(wit_surface_average_air_binned, wit_avg_air_bin_count_col)
+      surface_avg_air_bin_norm_plot <- surface_avg_air_bin_norm_plot +
+        geom_line(data = wit_avg_air_bin_norm,
+                  aes_string(x = wit_avg_air_bin_area_col, y = "normalized_count"),
+                  color = "#009E73", 
+                  linetype = "dashed")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Binned", "Witness", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Binned", "Witness", "Dataset does not exist")
+  }
+  
+  if(exists("cw_surface_average_air_binned")) {
+    cw_avg_air_bin_area_col <- get_column_name(cw_surface_average_air_binned, c("log_area", "Area"))
+    cw_avg_air_bin_count_col <- get_column_name(cw_surface_average_air_binned, c("log_count_bin"))
+    
+    if (!is.null(cw_avg_air_bin_area_col) && !is.null(cw_avg_air_bin_count_col)) {
+      cw_avg_air_bin_norm <- normalize_count_data(cw_surface_average_air_binned, cw_avg_air_bin_count_col)
+      surface_avg_air_bin_norm_plot <- surface_avg_air_bin_norm_plot +
+        geom_line(data = cw_avg_air_bin_norm,
+                  aes_string(x = cw_avg_air_bin_area_col, y = "normalized_count"),
+                  color = "#CC79A7", 
+                  linetype = "dotted")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Binned", "Calibration", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Binned", "Calibration", "Dataset does not exist")
+  }
+  
+  # Finalize plots or use fallback
+  if(lines_added_avg == 0) {
+    surface_binned_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+    log_missing_data("Average", "Surface Binned", "ALL", "No data lines available - using fallback")
+  } else {
+    surface_avg_bin_norm_plot <- surface_avg_bin_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Count"
+      ) +
+      compact_theme
+    surface_binned_norm_plots[[length(trial_order) + 1]] <- surface_avg_bin_norm_plot
+  }
+  
+  if(lines_added_air == 0) {
+    surface_binned_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+    log_missing_data("Air Average", "Surface Binned", "ALL", "No data lines available - using fallback")
+  } else {
+    surface_avg_air_bin_norm_plot <- surface_avg_air_bin_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Count"
+      ) +
+      compact_theme
+    surface_binned_norm_plots[[length(trial_order) + 2]] <- surface_avg_air_bin_norm_plot
+  }
+}, error = function(e) {
+  surface_binned_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+  surface_binned_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+  log_missing_data("Average", "Surface Binned", "ERROR", paste("Error occurred:", e$message))
+})
+
+# Edge cumulative average with normalization and logging
+tryCatch({
+  lines_added_avg <- 0
+  lines_added_air <- 0
+  
+  edge_avg_cum_norm_plot <- ggplot()
+  edge_avg_air_cum_norm_plot <- ggplot()
+  
+  # Try standard average data for edge cumulative
+  edge_datasets <- list(
+    list(name = "edge_average", color = "#CC79A7", linetype = "solid", label = "Edge"),
+    list(name = "cw_edge_average", color = "#0072B2", linetype = "dashed", label = "CW_Edge"),
+    list(name = "model_edge_average", color = "#009E73", linetype = "dotted", label = "Model_Edge"),
+    list(name = "SSLSM_edge_average", color = "#D55E00", linetype = "dotdash", label = "SSLSM_Edge"),
+    list(name = "WSLSM_edge_average", color = "#56B4E9", linetype = "longdash", label = "WSLSM_Edge"),
+    list(name = "CSLSM_edge_average", color = "#F0E442", linetype = "twodash", label = "CSLSM_Edge")
+  )
+  
+  edge_air_datasets <- list(
+    list(name = "edge_average_air", color = "#CC79A7", linetype = "solid", label = "Edge"),
+    list(name = "cw_edge_average_air", color = "#0072B2", linetype = "dashed", label = "CW_Edge"),
+    list(name = "model_edge_average_air", color = "#009E73", linetype = "dotted", label = "Model_Edge"),
+    list(name = "SSLSM_edge_average_air", color = "#D55E00", linetype = "dotdash", label = "SSLSM_Edge"),
+    list(name = "WSLSM_edge_average_air", color = "#56B4E9", linetype = "longdash", label = "WSLSM_Edge"),
+    list(name = "CSLSM_edge_average_air", color = "#F0E442", linetype = "twodash", label = "CSLSM_Edge")
+  )
+  
+  # Process standard average datasets
+  for(dataset in edge_datasets) {
+    if(exists(dataset$name)) {
+      data <- get(dataset$name)
+      area_col <- get_column_name(data, c("log_area", "Area"))
+      count_col <- get_column_name(data, c("log_count", "Count", "Average_Count"))
+      
+      if (!is.null(area_col) && !is.null(count_col)) {
+        data_norm <- normalize_count_data(data, count_col)
+        edge_avg_cum_norm_plot <- edge_avg_cum_norm_plot +
+          geom_line(data = data_norm,
+                    aes_string(x = area_col, y = "normalized_count"),
+                    color = dataset$color, 
+                    linetype = dataset$linetype)
+        lines_added_avg <- lines_added_avg + 1
+      } else {
+        log_missing_data("Average", "Edge Cumulative", dataset$label, "Missing required columns")
+      }
+    } else {
+      log_missing_data("Average", "Edge Cumulative", dataset$label, "Dataset does not exist")
+    }
+  }
+  
+  # Process air average datasets
+  for(dataset in edge_air_datasets) {
+    if(exists(dataset$name)) {
+      data <- get(dataset$name)
+      area_col <- get_column_name(data, c("log_area", "Area"))
+      count_col <- get_column_name(data, c("log_count", "Count", "Average_Count"))
+      
+      if (!is.null(area_col) && !is.null(count_col)) {
+        data_norm <- normalize_count_data(data, count_col)
+        edge_avg_air_cum_norm_plot <- edge_avg_air_cum_norm_plot +
+          geom_line(data = data_norm,
+                    aes_string(x = area_col, y = "normalized_count"),
+                    color = dataset$color, 
+                    linetype = dataset$linetype)
+        lines_added_air <- lines_added_air + 1
+      } else {
+        log_missing_data("Air Average", "Edge Cumulative", dataset$label, "Missing required columns")
+      }
+    } else {
+      log_missing_data("Air Average", "Edge Cumulative", dataset$label, "Dataset does not exist")
+    }
+  }
+  
+  # Finalize plots or use fallback
+  if(lines_added_avg == 0) {
+    edge_cumulative_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+    log_missing_data("Average", "Edge Cumulative", "ALL", "No data lines available - using fallback")
+  } else {
+    edge_avg_cum_norm_plot <- edge_avg_cum_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Count"
+      ) +
+      compact_theme
+    edge_cumulative_norm_plots[[length(trial_order) + 1]] <- edge_avg_cum_norm_plot
+  }
+  
+  if(lines_added_air == 0) {
+    edge_cumulative_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+    log_missing_data("Air Average", "Edge Cumulative", "ALL", "No data lines available - using fallback")
+  } else {
+    edge_avg_air_cum_norm_plot <- edge_avg_air_cum_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Count"
+      ) +
+      compact_theme
+    edge_cumulative_norm_plots[[length(trial_order) + 2]] <- edge_avg_air_cum_norm_plot
+  }
+}, error = function(e) {
+  edge_cumulative_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+  edge_cumulative_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+  log_missing_data("Average", "Edge Cumulative", "ERROR", paste("Error occurred:", e$message))
+})
+
+# Edge binned average with normalization and logging
+tryCatch({
+  lines_added_avg <- 0
+  lines_added_air <- 0
+  
+  edge_avg_bin_norm_plot <- ggplot()
+  edge_avg_air_bin_norm_plot <- ggplot()
+  
+  # Define datasets for edge binned average
+  edge_bin_datasets <- list(
+    list(name = "edge_average_binned", color = "#CC79A7", linetype = "solid", label = "Edge"),
+    list(name = "cw_edge_average_binned", color = "#0072B2", linetype = "dashed", label = "CW_Edge"),
+    list(name = "model_edge_average_binned", color = "#009E73", linetype = "dotted", label = "Model_Edge"),
+    list(name = "SSLSM_edge_average_binned", color = "#D55E00", linetype = "dotdash", label = "SSLSM_Edge"),
+    list(name = "WSLSM_edge_average_binned", color = "#56B4E9", linetype = "longdash", label = "WSLSM_Edge"),
+    list(name = "CSLSM_edge_average_binned", color = "#F0E442", linetype = "twodash", label = "CSLSM_Edge")
+  )
+  
+  edge_air_bin_datasets <- list(
+    list(name = "edge_average_air_binned", color = "#CC79A7", linetype = "solid", label = "Edge"),
+    list(name = "cw_edge_average_air_binned", color = "#0072B2", linetype = "dashed", label = "CW_Edge"),
+    list(name = "model_edge_average_air_binned", color = "#009E73", linetype = "dotted", label = "Model_Edge"),
+    list(name = "SSLSM_edge_average_air_binned", color = "#D55E00", linetype = "dotdash", label = "SSLSM_Edge"),
+    list(name = "WSLSM_edge_average_air_binned", color = "#56B4E9", linetype = "longdash", label = "WSLSM_Edge"),
+    list(name = "CSLSM_edge_average_air_binned", color = "#F0E442", linetype = "twodash", label = "CSLSM_Edge")
+  )
+  
+  # Process standard average binned datasets
+  for(dataset in edge_bin_datasets) {
+    if(exists(dataset$name)) {
+      data <- get(dataset$name)
+      area_col <- get_column_name(data, c("log_area", "Area"))
+      count_col <- get_column_name(data, c("log_count_bin"))
+      
+      if (!is.null(area_col) && !is.null(count_col)) {
+        data_norm <- normalize_count_data(data, count_col)
+        edge_avg_bin_norm_plot <- edge_avg_bin_norm_plot +
+          geom_line(data = data_norm,
+                    aes_string(x = area_col, y = "normalized_count"),
+                    color = dataset$color, 
+                    linetype = dataset$linetype)
+        lines_added_avg <- lines_added_avg + 1
+      } else {
+        log_missing_data("Average", "Edge Binned", dataset$label, "Missing required columns")
+      }
+    } else {
+      log_missing_data("Average", "Edge Binned", dataset$label, "Dataset does not exist")
+    }
+  }
+  
+  # Process air average binned datasets
+  for(dataset in edge_air_bin_datasets) {
+    if(exists(dataset$name)) {
+      data <- get(dataset$name)
+      area_col <- get_column_name(data, c("log_area", "Area"))
+      count_col <- get_column_name(data, c("log_count_bin"))
+      
+      if (!is.null(area_col) && !is.null(count_col)) {
+        data_norm <- normalize_count_data(data, count_col)
+        edge_avg_air_bin_norm_plot <- edge_avg_air_bin_norm_plot +
+          geom_line(data = data_norm,
+                    aes_string(x = area_col, y = "normalized_count"),
+                    color = dataset$color, 
+                    linetype = dataset$linetype)
+        lines_added_air <- lines_added_air + 1
+      } else {
+        log_missing_data("Air Average", "Edge Binned", dataset$label, "Missing required columns")
+      }
+    } else {
+      log_missing_data("Air Average", "Edge Binned", dataset$label, "Dataset does not exist")
+    }
+  }
+  
+  # Finalize plots or use fallback
+  if(lines_added_avg == 0) {
+    edge_binned_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+    log_missing_data("Average", "Edge Binned", "ALL", "No data lines available - using fallback")
+  } else {
+    edge_avg_bin_norm_plot <- edge_avg_bin_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Count"
+      ) +
+      compact_theme
+    edge_binned_norm_plots[[length(trial_order) + 1]] <- edge_avg_bin_norm_plot
+  }
+  
+  if(lines_added_air == 0) {
+    edge_binned_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+    log_missing_data("Air Average", "Edge Binned", "ALL", "No data lines available - using fallback")
+  } else {
+    edge_avg_air_bin_norm_plot <- edge_avg_air_bin_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Count"
+      ) +
+      compact_theme
+    edge_binned_norm_plots[[length(trial_order) + 2]] <- edge_avg_air_bin_norm_plot
+  }
+}, error = function(e) {
+  edge_binned_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+  edge_binned_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+  log_missing_data("Average", "Edge Binned", "ERROR", paste("Error occurred:", e$message))
+})
+
+# Print comprehensive missing data log
+cat("\n=== MISSING DATA LOG ===\n")
+cat("Total missing data entries:", length(missing_data_log), "\n\n")
+if(length(missing_data_log) > 0) {
+  for(i in 1:length(missing_data_log)) {
+    cat(paste0(i, ". ", missing_data_log[[i]], "\n"))
+  }
+} else {
+  cat("No missing data detected - all datasets loaded successfully!\n")
+}
+cat("\n========================\n")
+
+# Create standalone legend grobs for surface and edge plots
+surface_legend <- grobTree(
+  # Starshade
+  linesGrob(x = unit(c(0.1, 0.4), "npc"), y = unit(0.8, "npc"), 
+            gp = gpar(col = "#D55E00", lty = "solid", lwd = 4)),
+  textGrob("Starshade", x = unit(0.5, "npc"), y = unit(0.8, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  # Witness
+  linesGrob(x = unit(c(0.1, 0.4), "npc"), y = unit(0.5, "npc"), 
+            gp = gpar(col = "#009E73", lty = "dashed", lwd = 4)),
+  textGrob("Witness", x = unit(0.5, "npc"), y = unit(0.5, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  # Calibration
+  linesGrob(x = unit(c(0.1, 0.4), "npc"), y = unit(0.2, "npc"), 
+            gp = gpar(col = "#CC79A7", lty = "dotted", lwd = 4)),
+  textGrob("Calibration", x = unit(0.5, "npc"), y = unit(0.2, "npc"), 
+           just = "left", gp = gpar(fontsize = 20))
+)
+
+# Edge legend (more complex with 6 items)
+edge_legend <- grobTree(
+  # First column
+  linesGrob(x = unit(c(0.05, 0.25), "npc"), y = unit(0.8, "npc"), 
+            gp = gpar(col = "#CC79A7", lty = "solid", lwd = 4)),
+  textGrob("Starshade Observed", x = unit(0.3, "npc"), y = unit(0.8, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  linesGrob(x = unit(c(0.05, 0.25), "npc"), y = unit(0.5, "npc"), 
+            gp = gpar(col = "#0072B2", lty = "dashed", lwd = 4)),
+  textGrob("Calibration Observed", x = unit(0.3, "npc"), y = unit(0.5, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  linesGrob(x = unit(c(0.05, 0.25), "npc"), y = unit(0.2, "npc"), 
+            gp = gpar(col = "#009E73", lty = "dotted", lwd = 4)),
+  textGrob("Model", x = unit(0.3, "npc"), y = unit(0.2, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  # Second column
+  linesGrob(x = unit(c(0.55, 0.75), "npc"), y = unit(0.8, "npc"), 
+            gp = gpar(col = "#D55E00", lty = "dotdash", lwd = 4)),
+  textGrob("SLSM Starshade", x = unit(0.8, "npc"), y = unit(0.8, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  linesGrob(x = unit(c(0.55, 0.75), "npc"), y = unit(0.5, "npc"), 
+            gp = gpar(col = "#56B4E9", lty = "longdash", lwd = 4)),
+  textGrob("SLSM Witness", x = unit(0.8, "npc"), y = unit(0.5, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  linesGrob(x = unit(c(0.55, 0.75), "npc"), y = unit(0.2, "npc"), 
+            gp = gpar(col = "#F0E442", lty = "twodash", lwd = 4)),
+  textGrob("SLSM Calibration", x = unit(0.8, "npc"), y = unit(0.2, "npc"), 
+           just = "left", gp = gpar(fontsize = 20))
+)
+
+# Create column and row labels with consistent formatting
+col_labels <- c(
+  lapply(trial_order, function(t) textGrob(paste("Trial", t), gp = gpar(fontsize = 22, fontface = "bold"))),
+  list(
+    textGrob("Average", gp = gpar(fontsize = 22, fontface = "bold")),
+    textGrob("Air Average", gp = gpar(fontsize = 22, fontface = "bold"))
+  )
+)
+
+row_labels <- list(
+  textGrob("Surface\nCumulative", gp = gpar(fontsize = 22, fontface = "bold"), rot = 90),
+  textGrob("Surface\nBinned", gp = gpar(fontsize = 22, fontface = "bold"), rot = 90),
+  textGrob("Edge\nCumulative", gp = gpar(fontsize = 22, fontface = "bold"), rot = 90),
+  textGrob("Edge\nBinned", gp = gpar(fontsize = 22, fontface = "bold"), rot = 90)
+)
+
+# Assemble the complete grid layout
+complete_grid <- grid.arrange(
+  # Main title 
+  textGrob("Comprehensive Particle Distribution Analysis Across Trials - Normalized Counts", 
+           gp = gpar(fontsize = 36, fontface = "bold"), y = 0.7),
+  
+  # Main grid
+  grid.arrange(
+    # Column labels
+    arrangeGrob(
+      nullGrob(), 
+      col_labels[[1]], col_labels[[2]], col_labels[[3]], col_labels[[4]], 
+      col_labels[[5]], col_labels[[6]], col_labels[[7]], col_labels[[8]],
+      ncol = 9, widths = c(0.25, 1, 1, 1, 1, 1, 1, 1, 1),
+      heights = unit(0.2, "cm")
+    ),
+    
+    # Main plot grid with row labels
+    arrangeGrob(
+      # Surface Cumulative row
+      row_labels[[1]],
+      surface_cumulative_norm_plots[[1]], surface_cumulative_norm_plots[[2]], 
+      surface_cumulative_norm_plots[[3]], surface_cumulative_norm_plots[[4]], 
+      surface_cumulative_norm_plots[[5]], surface_cumulative_norm_plots[[6]], 
+      surface_cumulative_norm_plots[[7]], surface_cumulative_norm_plots[[8]],
+      
+      # Surface Binned row
+      row_labels[[2]],
+      surface_binned_norm_plots[[1]], surface_binned_norm_plots[[2]], 
+      surface_binned_norm_plots[[3]], surface_binned_norm_plots[[4]], 
+      surface_binned_norm_plots[[5]], surface_binned_norm_plots[[6]], 
+      surface_binned_norm_plots[[7]], surface_binned_norm_plots[[8]],
+      
+      # Edge Cumulative row
+      row_labels[[3]],
+      edge_cumulative_norm_plots[[1]], edge_cumulative_norm_plots[[2]], 
+      edge_cumulative_norm_plots[[3]], edge_cumulative_norm_plots[[4]], 
+      edge_cumulative_norm_plots[[5]], edge_cumulative_norm_plots[[6]], 
+      edge_cumulative_norm_plots[[7]], edge_cumulative_norm_plots[[8]],
+      
+      # Edge Binned row
+      row_labels[[4]],
+      edge_binned_norm_plots[[1]], edge_binned_norm_plots[[2]], 
+      edge_binned_norm_plots[[3]], edge_binned_norm_plots[[4]], 
+      edge_binned_norm_plots[[5]], edge_binned_norm_plots[[6]], 
+      edge_binned_norm_plots[[7]], edge_binned_norm_plots[[8]],
+      
+      ncol = 9, widths = c(0.25, 1, 1, 1, 1, 1, 1, 1, 1)
+    ),
+    
+    # Legend section
+    arrangeGrob(
+      textGrob("Surface Plot Legend:", gp = gpar(fontsize = 22, fontface = "bold")), 
+      surface_legend,
+      textGrob("Edge Plot Legend:", gp = gpar(fontsize = 22, fontface = "bold")), 
+      edge_legend,
+      ncol = 4, widths = c(0.4, 1.3, 0.4, 1.3)
+    ),
+    
+    # Layout adjustment
+    nrow = 3,
+    heights = c(0.1, 4, 0.5)
+  ),
+  
+  # Overall layout parameters
+  heights = c(0.05, 0.95)
+)
+
+# Display the complete grid
+print(complete_grid)
+
+# Save to high-resolution image
+ggsave("particle_distribution_comparison_normalized.png", complete_grid, width = 40, height = 20, dpi = 300)
+```
+
+### 10.4 Normalized Scatter Graph
+```{r normalized_scatter_graph}
+
+# Create a comprehensive comparison grid showing all trials and analysis types for scatter data with normalized values
+# This normalization makes it easier to compare scatter patterns across different trials
+library(tidyverse)
+library(gridExtra)
+library(grid)
+
+# Define trials in the requested order
+trial_order <- c(9, 10, 11, 12, 13, 14)
+
+# Custom theme for consistent appearance with minimal margins
+compact_theme <- theme_minimal() +
+  theme(
+    plot.title = element_blank(),  # Remove individual plot titles
+    plot.margin = margin(2, 2, 2, 2, "pt"),  # Minimize plot margins
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    legend.position = "none",
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  )
+
+# Function to normalize scatter data directly
+normalize_scatter_data <- function(data, scatter_col) {
+  data %>%
+    mutate(
+      # Get the scatter values
+      scatter_value = get(scatter_col),
+      
+      # Handle invalid values
+      scatter_clean = case_when(
+        is.na(scatter_value) ~ 0,
+        is.infinite(scatter_value) & scatter_value < 0 ~ 0,
+        scatter_value < 0 ~ 0,  # Negative scatter values become 0
+        TRUE ~ scatter_value
+      ),
+      
+      # For normalization, find the range of valid scatter values
+      valid_scatters = scatter_clean[is.finite(scatter_clean) & scatter_clean > 0],
+      min_valid_scatter = ifelse(length(valid_scatters) > 0, min(valid_scatters, na.rm = TRUE), 0),
+      max_valid_scatter = ifelse(length(valid_scatters) > 0, max(valid_scatters, na.rm = TRUE), 1),
+      scatter_range = max_valid_scatter - min_valid_scatter,
+      
+      # Normalize scatter values to 0-1 range
+      normalized_scatter = case_when(
+        !is.finite(scatter_clean) | scatter_clean <= 0 ~ 0,
+        scatter_range == 0 ~ 0.5,  # If all values are the same, set to middle
+        TRUE ~ (scatter_clean - min_valid_scatter) / scatter_range
+      )
+    ) %>%
+    # Clean up intermediate columns
+    select(-scatter_value, -scatter_clean, -valid_scatters, 
+           -min_valid_scatter, -max_valid_scatter, -scatter_range)
+}
+
+# Create lists to store plots
+surface_scatter_cumulative_norm_plots <- list()
+surface_scatter_binned_norm_plots <- list()
+edge_scatter_cumulative_norm_plots <- list()
+edge_scatter_binned_norm_plots <- list()
+
+# Create logging lists to track missing data
+missing_data_log <- list()
+
+# Function to create a fallback plot when NO data is available
+create_fallback_plot <- function() {
+  ggplot() + 
+    annotate("text", x = 2, y = 2, label = "No data available") +
+    theme_minimal() +
+    theme(plot.margin = margin(2, 2, 2, 2, "pt")) +
+    labs(x = expression(log[10](Area)), y = "Normalized Scatter")
+}
+
+# Helper function to check for column names
+get_column_name <- function(data, possible_names) {
+  for (name in possible_names) {
+    if (name %in% names(data)) {
+      return(name)
+    }
+  }
+  return(NULL)
+}
+
+# Function to log missing data
+log_missing_data <- function(trial_num, plot_type, dataset_name, reason) {
+  log_entry <- paste0("Trial ", trial_num, " - ", plot_type, " - ", dataset_name, ": ", reason)
+  missing_data_log <<- append(missing_data_log, log_entry)
+  message(log_entry)
+}
+
+# Generate plots for each trial with error handling and normalization
+for (i in 1:length(trial_order)) {
+  trial_num <- trial_order[i]
+  
+  # 1. Surface cumulative scatter plots with normalization
+  tryCatch({
+    # Initialize variables to track successful line additions
+    lines_added <- 0
+    
+    # Base plot for surface cumulative scatter
+    p_surf_cum <- ggplot()
+    
+    # Try to add surface data
+    if(exists(paste0("surface_", trial_num))) {
+      surface_data <- get(paste0("surface_", trial_num))
+      area_col <- get_column_name(surface_data, c("log_area", "Area"))
+      scatter_col <- get_column_name(surface_data, c("Average_Scatter"))
+      
+      if (!is.null(area_col) && !is.null(scatter_col)) {
+        surface_norm <- normalize_scatter_data(surface_data, scatter_col)
+        p_surf_cum <- p_surf_cum + 
+          geom_line(data = surface_norm,
+                    aes_string(x = area_col, y = "normalized_scatter"),
+                    color = "#D55E00", 
+                    linetype = "solid")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Surface Cumulative Scatter", "Surface", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Surface Cumulative Scatter", "Surface", "Dataset does not exist")
+    }
+    
+    # Try to add witness data
+    if(exists(paste0("wit_surface_", trial_num))) {
+      witness_data <- get(paste0("wit_surface_", trial_num))
+      wit_area_col <- get_column_name(witness_data, c("log_area", "Area"))
+      wit_scatter_col <- get_column_name(witness_data, c("Average_Scatter"))
+      
+      if (!is.null(wit_area_col) && !is.null(wit_scatter_col)) {
+        witness_norm <- normalize_scatter_data(witness_data, wit_scatter_col)
+        p_surf_cum <- p_surf_cum + 
+          geom_line(data = witness_norm,
+                    aes_string(x = wit_area_col, y = "normalized_scatter"),
+                    color = "#009E73", 
+                    linetype = "dashed")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Surface Cumulative Scatter", "Witness", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Surface Cumulative Scatter", "Witness", "Dataset does not exist")
+    }
+    
+    # Try to add calibration data for trials 12-14
+    if(trial_num %in% c(12, 13, 14)) {
+      if(exists(paste0("cw_surface_", trial_num))) {
+        cw_data <- get(paste0("cw_surface_", trial_num))
+        cw_area_col <- get_column_name(cw_data, c("log_area", "Area"))
+        cw_scatter_col <- get_column_name(cw_data, c("Average_Scatter"))
+        
+        if (!is.null(cw_area_col) && !is.null(cw_scatter_col)) {
+          cw_norm <- normalize_scatter_data(cw_data, cw_scatter_col)
+          p_surf_cum <- p_surf_cum +
+            geom_line(data = cw_norm,
+                      aes_string(x = cw_area_col, y = "normalized_scatter"),
+                      color = "#CC79A7", 
+                      linetype = "dotted")
+          lines_added <- lines_added + 1
+        } else {
+          log_missing_data(trial_num, "Surface Cumulative Scatter", "Calibration", "Missing required columns")
+        }
+      } else {
+        log_missing_data(trial_num, "Surface Cumulative Scatter", "Calibration", "Dataset does not exist")
+      }
+    }
+    
+    # Only use fallback if NO lines were added
+    if(lines_added == 0) {
+      surface_scatter_cumulative_norm_plots[[i]] <- create_fallback_plot()
+      log_missing_data(trial_num, "Surface Cumulative Scatter", "ALL", "No data lines available - using fallback")
+    } else {
+      # Finalize surface cumulative plot with minimal spacing
+      p_surf_cum <- p_surf_cum +
+        labs(
+          x = expression(log[10](Area)),
+          y = "Normalized Scatter"
+        ) +
+        compact_theme
+      
+      surface_scatter_cumulative_norm_plots[[i]] <- p_surf_cum
+    }
+  }, error = function(e) {
+    surface_scatter_cumulative_norm_plots[[i]] <<- create_fallback_plot()
+    log_missing_data(trial_num, "Surface Cumulative Scatter", "ERROR", paste("Error occurred:", e$message))
+  })
+  
+  # 2. Surface binned scatter plots with normalization
+  tryCatch({
+    lines_added <- 0
+    p_surf_bin <- ggplot()
+    
+    # Try to add surface binned data
+    if(exists(paste0("surface_", trial_num, "_binned"))) {
+      surface_bin_data <- get(paste0("surface_", trial_num, "_binned"))
+      bin_area_col <- get_column_name(surface_bin_data, c("log_area", "Area"))
+      bin_scatter_col <- get_column_name(surface_bin_data, c("Average_Scatter"))
+      
+      if (!is.null(bin_area_col) && !is.null(bin_scatter_col)) {
+        surface_bin_norm <- normalize_scatter_data(surface_bin_data, bin_scatter_col)
+        p_surf_bin <- p_surf_bin + 
+          geom_line(data = surface_bin_norm,
+                    aes_string(x = bin_area_col, y = "normalized_scatter"),
+                    color = "#D55E00", 
+                    linetype = "solid")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Surface Binned Scatter", "Surface", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Surface Binned Scatter", "Surface", "Dataset does not exist")
+    }
+    
+    # Try to add witness binned data
+    if(exists(paste0("wit_surface_", trial_num, "_binned"))) {
+      witness_bin_data <- get(paste0("wit_surface_", trial_num, "_binned"))
+      wit_bin_area_col <- get_column_name(witness_bin_data, c("log_area", "Area"))
+      wit_bin_scatter_col <- get_column_name(witness_bin_data, c("Average_Scatter"))
+      
+      if (!is.null(wit_bin_area_col) && !is.null(wit_bin_scatter_col)) {
+        witness_bin_norm <- normalize_scatter_data(witness_bin_data, wit_bin_scatter_col)
+        p_surf_bin <- p_surf_bin + 
+          geom_line(data = witness_bin_norm,
+                    aes_string(x = wit_bin_area_col, y = "normalized_scatter"),
+                    color = "#009E73", 
+                    linetype = "dashed")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Surface Binned Scatter", "Witness", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Surface Binned Scatter", "Witness", "Dataset does not exist")
+    }
+    
+    # Try to add calibration binned data for trials 12-14
+    if(trial_num %in% c(12, 13, 14)) {
+      if(exists(paste0("cw_surface_", trial_num, "_binned"))) {
+        cw_bin_data <- get(paste0("cw_surface_", trial_num, "_binned"))
+        cw_bin_area_col <- get_column_name(cw_bin_data, c("log_area", "Area"))
+        cw_bin_scatter_col <- get_column_name(cw_bin_data, c("Average_Scatter"))
+        
+        if (!is.null(cw_bin_area_col) && !is.null(cw_bin_scatter_col)) {
+          cw_bin_norm <- normalize_scatter_data(cw_bin_data, cw_bin_scatter_col)
+          p_surf_bin <- p_surf_bin +
+            geom_line(data = cw_bin_norm,
+                      aes_string(x = cw_bin_area_col, y = "normalized_scatter"),
+                      color = "#CC79A7", 
+                      linetype = "dotted")
+          lines_added <- lines_added + 1
+        } else {
+          log_missing_data(trial_num, "Surface Binned Scatter", "Calibration", "Missing required columns")
+        }
+      } else {
+        log_missing_data(trial_num, "Surface Binned Scatter", "Calibration", "Dataset does not exist")
+      }
+    }
+    
+    # Only use fallback if NO lines were added
+    if(lines_added == 0) {
+      surface_scatter_binned_norm_plots[[i]] <- create_fallback_plot()
+      log_missing_data(trial_num, "Surface Binned Scatter", "ALL", "No data lines available - using fallback")
+    } else {
+      p_surf_bin <- p_surf_bin +
+        labs(
+          x = expression(log[10](Area)),
+          y = "Normalized Scatter"
+        ) +
+        compact_theme
+      
+      surface_scatter_binned_norm_plots[[i]] <- p_surf_bin
+    }
+  }, error = function(e) {
+    surface_scatter_binned_norm_plots[[i]] <<- create_fallback_plot()
+    log_missing_data(trial_num, "Surface Binned Scatter", "ERROR", paste("Error occurred:", e$message))
+  })
+  
+  # 3. Edge cumulative scatter plots with normalization
+  tryCatch({
+    lines_added <- 0
+    p_edge_cum <- ggplot()
+    
+    # Try to add edge data
+    if(exists(paste0("edge_", trial_num))) {
+      edge_data <- get(paste0("edge_", trial_num))
+      edge_area_col <- get_column_name(edge_data, c("log_area", "Area"))
+      edge_scatter_col <- get_column_name(edge_data, c("Average_Scatter"))
+      
+      if (!is.null(edge_area_col) && !is.null(edge_scatter_col)) {
+        edge_norm <- normalize_scatter_data(edge_data, edge_scatter_col)
+        p_edge_cum <- p_edge_cum + 
+          geom_line(data = edge_norm,
+                    aes_string(x = edge_area_col, y = "normalized_scatter"),
+                    color = "#CC79A7", 
+                    linetype = "solid")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative Scatter", "Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Cumulative Scatter", "Edge", "Dataset does not exist")
+    }
+    
+    # Try to add cw_edge data
+    if(exists(paste0("cw_edge_", trial_num))) {
+      cw_edge_data <- get(paste0("cw_edge_", trial_num))
+      cw_edge_area_col <- get_column_name(cw_edge_data, c("log_area", "Area"))
+      cw_edge_scatter_col <- get_column_name(cw_edge_data, c("Average_Scatter"))
+      
+      if (!is.null(cw_edge_area_col) && !is.null(cw_edge_scatter_col)) {
+        cw_edge_norm <- normalize_scatter_data(cw_edge_data, cw_edge_scatter_col)
+        p_edge_cum <- p_edge_cum + 
+          geom_line(data = cw_edge_norm,
+                    aes_string(x = cw_edge_area_col, y = "normalized_scatter"),
+                    color = "#0072B2", 
+                    linetype = "dashed")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative Scatter", "CW_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Cumulative Scatter", "CW_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add SSLSM_edge data
+    if(exists(paste0("SSLSM_edge_", trial_num))) {
+      SSLSM_edge_data <- get(paste0("SSLSM_edge_", trial_num))
+      SSLSM_edge_area_col <- get_column_name(SSLSM_edge_data, c("log_area", "Area"))
+      SSLSM_edge_scatter_col <- get_column_name(SSLSM_edge_data, c("Cumulative_Scatter"))
+      
+      if (!is.null(SSLSM_edge_area_col) && !is.null(SSLSM_edge_scatter_col)) {
+        SSLSM_edge_norm <- normalize_scatter_data(SSLSM_edge_data, SSLSM_edge_scatter_col)
+        p_edge_cum <- p_edge_cum + 
+          geom_line(data = SSLSM_edge_norm,
+                    aes_string(x = SSLSM_edge_area_col, y = "normalized_scatter"),
+                    color = "#D55E00", 
+                    linetype = "dotdash")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative Scatter", "SSLSM_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Cumulative Scatter", "SSLSM_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add WSLSM_edge data
+    if(exists(paste0("WSLSM_edge_", trial_num))) {
+      WSLSM_edge_data <- get(paste0("WSLSM_edge_", trial_num))
+      WSLSM_edge_area_col <- get_column_name(WSLSM_edge_data, c("log_area", "Area"))
+      WSLSM_edge_scatter_col <- get_column_name(WSLSM_edge_data, c("Cumulative_Scatter"))
+      
+      if (!is.null(WSLSM_edge_area_col) && !is.null(WSLSM_edge_scatter_col)) {
+        WSLSM_edge_norm <- normalize_scatter_data(WSLSM_edge_data, WSLSM_edge_scatter_col)
+        p_edge_cum <- p_edge_cum + 
+          geom_line(data = WSLSM_edge_norm,
+                    aes_string(x = WSLSM_edge_area_col, y = "normalized_scatter"),
+                    color = "#56B4E9", 
+                    linetype = "longdash")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative Scatter", "WSLSM_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Cumulative Scatter", "WSLSM_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add calibration SLSM data for trials 12-14
+    if(trial_num %in% c(12, 13, 14)) {
+      if(exists(paste0("CSLSM_edge_", trial_num))) {
+        CSLSM_edge_data <- get(paste0("CSLSM_edge_", trial_num))
+        CSLSM_edge_area_col <- get_column_name(CSLSM_edge_data, c("log_area", "Area"))
+        CSLSM_edge_scatter_col <- get_column_name(CSLSM_edge_data, c("Cumulative_Scatter"))
+        
+        if (!is.null(CSLSM_edge_area_col) && !is.null(CSLSM_edge_scatter_col)) {
+          CSLSM_edge_norm <- normalize_scatter_data(CSLSM_edge_data, CSLSM_edge_scatter_col)
+          p_edge_cum <- p_edge_cum +
+            geom_line(data = CSLSM_edge_norm,
+                      aes_string(x = CSLSM_edge_area_col, y = "normalized_scatter"),
+                      color = "#F0E442", 
+                      linetype = "twodash")
+          lines_added <- lines_added + 1
+        } else {
+          log_missing_data(trial_num, "Edge Cumulative Scatter", "CSLSM_Edge", "Missing required columns")
+        }
+      } else {
+        log_missing_data(trial_num, "Edge Cumulative Scatter", "CSLSM_Edge", "Dataset does not exist")
+      }
+    }
+    
+    # Only use fallback if NO lines were added
+    if(lines_added == 0) {
+      edge_scatter_cumulative_norm_plots[[i]] <- create_fallback_plot()
+      log_missing_data(trial_num, "Edge Cumulative Scatter", "ALL", "No data lines available - using fallback")
+    } else {
+      p_edge_cum <- p_edge_cum +
+        labs(
+          x = expression(log[10](Area)),
+          y = "Normalized Scatter"
+        ) +
+        compact_theme
+      
+      edge_scatter_cumulative_norm_plots[[i]] <- p_edge_cum
+    }
+  }, error = function(e) {
+    edge_scatter_cumulative_norm_plots[[i]] <<- create_fallback_plot()
+    log_missing_data(trial_num, "Edge Cumulative Scatter", "ERROR", paste("Error occurred:", e$message))
+  })
+  
+  # 4. Edge binned scatter plots with normalization
+  tryCatch({
+    lines_added <- 0
+    p_edge_bin <- ggplot()
+    
+    # Try to add edge binned data
+    if(exists(paste0("edge_", trial_num, "_binned"))) {
+      edge_bin_data <- get(paste0("edge_", trial_num, "_binned"))
+      edge_bin_area_col <- get_column_name(edge_bin_data, c("log_area", "Area"))
+      edge_bin_scatter_col <- get_column_name(edge_bin_data, c("Average_Scatter"))
+      
+      if (!is.null(edge_bin_area_col) && !is.null(edge_bin_scatter_col)) {
+        edge_bin_norm <- normalize_scatter_data(edge_bin_data, edge_bin_scatter_col)
+        p_edge_bin <- p_edge_bin + 
+          geom_line(data = edge_bin_norm,
+                    aes_string(x = edge_bin_area_col, y = "normalized_scatter"),
+                    color = "#CC79A7", 
+                    linetype = "solid")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Binned Scatter", "Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Binned Scatter", "Edge", "Dataset does not exist")
+    }
+    
+    # Try to add cw_edge binned data
+    if(exists(paste0("cw_edge_", trial_num, "_binned"))) {
+      cw_edge_bin_data <- get(paste0("cw_edge_", trial_num, "_binned"))
+      cw_edge_bin_area_col <- get_column_name(cw_edge_bin_data, c("log_area", "Area"))
+      cw_edge_bin_scatter_col <- get_column_name(cw_edge_bin_data, c("Average_Scatter"))
+      
+      if (!is.null(cw_edge_bin_area_col) && !is.null(cw_edge_bin_scatter_col)) {
+        cw_edge_bin_norm <- normalize_scatter_data(cw_edge_bin_data, cw_edge_bin_scatter_col)
+        p_edge_bin <- p_edge_bin + 
+          geom_line(data = cw_edge_bin_norm,
+                    aes_string(x = cw_edge_bin_area_col, y = "normalized_scatter"),
+                    color = "#0072B2", 
+                    linetype = "dashed")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Binned Scatter", "CW_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Binned Scatter", "CW_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add SSLSM_edge binned data
+    if(exists(paste0("SSLSM_edge_", trial_num, "_binned"))) {
+      SSLSM_edge_bin_data <- get(paste0("SSLSM_edge_", trial_num, "_binned"))
+      SSLSM_edge_bin_area_col <- get_column_name(SSLSM_edge_bin_data, c("log_area", "Area"))
+      SSLSM_edge_bin_scatter_col <- get_column_name(SSLSM_edge_bin_data, c("Scatter"))
+      
+      if (!is.null(SSLSM_edge_bin_area_col) && !is.null(SSLSM_edge_bin_scatter_col)) {
+        SSLSM_edge_bin_norm <- normalize_scatter_data(SSLSM_edge_bin_data, SSLSM_edge_bin_scatter_col)
+        p_edge_bin <- p_edge_bin + 
+          geom_line(data = SSLSM_edge_bin_norm,
+                    aes_string(x = SSLSM_edge_bin_area_col, y = "normalized_scatter"),
+                    color = "#D55E00", 
+                    linetype = "dotdash")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Binned Scatter", "SSLSM_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Binned Scatter", "SSLSM_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add WSLSM_edge binned data
+    if(exists(paste0("WSLSM_edge_", trial_num, "_binned"))) {
+      WSLSM_edge_bin_data <- get(paste0("WSLSM_edge_", trial_num, "_binned"))
+      WSLSM_edge_bin_area_col <- get_column_name(WSLSM_edge_bin_data, c("log_area", "Area"))
+      WSLSM_edge_bin_scatter_col <- get_column_name(WSLSM_edge_bin_data, c("Scatter"))
+      
+      if (!is.null(WSLSM_edge_bin_area_col) && !is.null(WSLSM_edge_bin_scatter_col)) {
+        WSLSM_edge_bin_norm <- normalize_scatter_data(WSLSM_edge_bin_data, WSLSM_edge_bin_scatter_col)
+        p_edge_bin <- p_edge_bin + 
+          geom_line(data = WSLSM_edge_bin_norm,
+                    aes_string(x = WSLSM_edge_bin_area_col, y = "normalized_scatter"),
+                    color = "#56B4E9", 
+                    linetype = "longdash")
+        lines_added <- lines_added + 1
+      } else {
+        log_missing_data(trial_num, "Edge Binned Scatter", "WSLSM_Edge", "Missing required columns")
+      }
+    } else {
+      log_missing_data(trial_num, "Edge Binned Scatter", "WSLSM_Edge", "Dataset does not exist")
+    }
+    
+    # Try to add calibration SLSM binned data for trials 12-14
+    if(trial_num %in% c(12, 13, 14)) {
+      if(exists(paste0("CSLSM_edge_", trial_num, "_binned"))) {
+        CSLSM_edge_bin_data <- get(paste0("CSLSM_edge_", trial_num, "_binned"))
+        CSLSM_edge_bin_area_col <- get_column_name(CSLSM_edge_bin_data, c("log_area", "Area"))
+        CSLSM_edge_bin_scatter_col <- get_column_name(CSLSM_edge_bin_data, c("Scatter"))
+        
+        if (!is.null(CSLSM_edge_bin_area_col) && !is.null(CSLSM_edge_bin_scatter_col)) {
+          CSLSM_edge_bin_norm <- normalize_scatter_data(CSLSM_edge_bin_data, CSLSM_edge_bin_scatter_col)
+          p_edge_bin <- p_edge_bin +
+            geom_line(data = CSLSM_edge_bin_norm,
+                      aes_string(x = CSLSM_edge_bin_area_col, y = "normalized_scatter"),
+                      color = "#F0E442", 
+                      linetype = "twodash")
+          lines_added <- lines_added + 1
+        } else {
+          log_missing_data(trial_num, "Edge Binned Scatter", "CSLSM_Edge", "Missing required columns")
+        }
+      } else {
+        log_missing_data(trial_num, "Edge Binned Scatter", "CSLSM_Edge", "Dataset does not exist")
+      }
+    }
+    
+    # Only use fallback if NO lines were added
+    if(lines_added == 0) {
+      edge_scatter_binned_norm_plots[[i]] <- create_fallback_plot()
+      log_missing_data(trial_num, "Edge Binned Scatter", "ALL", "No data lines available - using fallback")
+    } else {
+      p_edge_bin <- p_edge_bin +
+        labs(
+          x = expression(log[10](Area)),
+          y = "Normalized Scatter"
+        ) +
+        compact_theme
+      
+      edge_scatter_binned_norm_plots[[i]] <- p_edge_bin
+    }
+  }, error = function(e) {
+    edge_scatter_binned_norm_plots[[i]] <<- create_fallback_plot()
+    log_missing_data(trial_num, "Edge Binned Scatter", "ERROR", paste("Error occurred:", e$message))
+  })
+}
+
+# Add the average plots with normalization and logging
+# Surface cumulative scatter average
+tryCatch({
+  lines_added_avg <- 0
+  lines_added_air <- 0
+  
+  surface_avg_scatter_cum_norm_plot <- ggplot()
+  surface_avg_air_scatter_cum_norm_plot <- ggplot()
+  
+  # Try standard average data
+  if(exists("surface_average")) {
+    s_avg_area_col <- get_column_name(surface_average, c("log_area", "Area"))
+    s_avg_scatter_col <- get_column_name(surface_average, c("Average_Scatter"))
+    
+    if (!is.null(s_avg_area_col) && !is.null(s_avg_scatter_col)) {
+      surface_avg_norm <- normalize_scatter_data(surface_average, s_avg_scatter_col)
+      surface_avg_scatter_cum_norm_plot <- surface_avg_scatter_cum_norm_plot +
+        geom_line(data = surface_avg_norm,
+                  aes_string(x = s_avg_area_col, y = "normalized_scatter"),
+                  color = "#D55E00", 
+                  linetype = "solid")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Cumulative Scatter", "Surface", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Cumulative Scatter", "Surface", "Dataset does not exist")
+  }
+  
+  if(exists("wit_surface_average")) {
+    wit_avg_area_col <- get_column_name(wit_surface_average, c("log_area", "Area"))
+    wit_avg_scatter_col <- get_column_name(wit_surface_average, c("Average_Scatter"))
+    
+    if (!is.null(wit_avg_area_col) && !is.null(wit_avg_scatter_col)) {
+      wit_avg_norm <- normalize_scatter_data(wit_surface_average, wit_avg_scatter_col)
+      surface_avg_scatter_cum_norm_plot <- surface_avg_scatter_cum_norm_plot +
+        geom_line(data = wit_avg_norm,
+                  aes_string(x = wit_avg_area_col, y = "normalized_scatter"),
+                  color = "#009E73", 
+                  linetype = "dashed")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Cumulative Scatter", "Witness", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Cumulative Scatter", "Witness", "Dataset does not exist")
+  }
+  
+  if(exists("cw_surface_average")) {
+    cw_avg_area_col <- get_column_name(cw_surface_average, c("log_area", "Area"))
+    cw_avg_scatter_col <- get_column_name(cw_surface_average, c("Average_Scatter"))
+    
+    if (!is.null(cw_avg_area_col) && !is.null(cw_avg_scatter_col)) {
+      cw_avg_norm <- normalize_scatter_data(cw_surface_average, cw_avg_scatter_col)
+      surface_avg_scatter_cum_norm_plot <- surface_avg_scatter_cum_norm_plot +
+        geom_line(data = cw_avg_norm,
+                  aes_string(x = cw_avg_area_col, y = "normalized_scatter"),
+                  color = "#CC79A7", 
+                  linetype = "dotted")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Cumulative Scatter", "Calibration", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Cumulative Scatter", "Calibration", "Dataset does not exist")
+  }
+  
+  # Try air average data
+  if(exists("surface_average_air")) {
+    s_avg_air_area_col <- get_column_name(surface_average_air, c("log_area", "Area"))
+    s_avg_air_scatter_col <- get_column_name(surface_average_air, c("Average_Scatter"))
+    
+    if (!is.null(s_avg_air_area_col) && !is.null(s_avg_air_scatter_col)) {
+      surface_avg_air_norm <- normalize_scatter_data(surface_average_air, s_avg_air_scatter_col)
+      surface_avg_air_scatter_cum_norm_plot <- surface_avg_air_scatter_cum_norm_plot +
+        geom_line(data = surface_avg_air_norm,
+                  aes_string(x = s_avg_air_area_col, y = "normalized_scatter"),
+                  color = "#D55E00", 
+                  linetype = "solid")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Cumulative Scatter", "Surface", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Cumulative Scatter", "Surface", "Dataset does not exist")
+  }
+  
+  if(exists("wit_surface_average_air")) {
+    wit_avg_air_area_col <- get_column_name(wit_surface_average_air, c("log_area", "Area"))
+    wit_avg_air_scatter_col <- get_column_name(wit_surface_average_air, c("Average_Scatter"))
+    
+    if (!is.null(wit_avg_air_area_col) && !is.null(wit_avg_air_scatter_col)) {
+      wit_avg_air_norm <- normalize_scatter_data(wit_surface_average_air, wit_avg_air_scatter_col)
+      surface_avg_air_scatter_cum_norm_plot <- surface_avg_air_scatter_cum_norm_plot +
+        geom_line(data = wit_avg_air_norm,
+                  aes_string(x = wit_avg_air_area_col, y = "normalized_scatter"),
+                  color = "#009E73", 
+                  linetype = "dashed")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Cumulative Scatter", "Witness", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Cumulative Scatter", "Witness", "Dataset does not exist")
+  }
+  
+  if(exists("cw_surface_average_air")) {
+    cw_avg_air_area_col <- get_column_name(cw_surface_average_air, c("log_area", "Area"))
+    cw_avg_air_scatter_col <- get_column_name(cw_surface_average_air, c("Average_Scatter"))
+    
+    if (!is.null(cw_avg_air_area_col) && !is.null(cw_avg_air_scatter_col)) {
+      cw_avg_air_norm <- normalize_scatter_data(cw_surface_average_air, cw_avg_air_scatter_col)
+      surface_avg_air_scatter_cum_norm_plot <- surface_avg_air_scatter_cum_norm_plot +
+        geom_line(data = cw_avg_air_norm,
+                  aes_string(x = cw_avg_air_area_col, y = "normalized_scatter"),
+                  color = "#CC79A7", 
+                  linetype = "dotted")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Cumulative Scatter", "Calibration", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Cumulative Scatter", "Calibration", "Dataset does not exist")
+  }
+  
+  # Finalize plots or use fallback
+  if(lines_added_avg == 0) {
+    surface_scatter_cumulative_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+    log_missing_data("Average", "Surface Cumulative Scatter", "ALL", "No data lines available - using fallback")
+  } else {
+    surface_avg_scatter_cum_norm_plot <- surface_avg_scatter_cum_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Scatter"
+      ) +
+      compact_theme
+    surface_scatter_cumulative_norm_plots[[length(trial_order) + 1]] <- surface_avg_scatter_cum_norm_plot
+  }
+  
+  if(lines_added_air == 0) {
+    surface_scatter_cumulative_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+    log_missing_data("Air Average", "Surface Cumulative Scatter", "ALL", "No data lines available - using fallback")
+  } else {
+    surface_avg_air_scatter_cum_norm_plot <- surface_avg_air_scatter_cum_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Scatter"
+      ) +
+      compact_theme
+    surface_scatter_cumulative_norm_plots[[length(trial_order) + 2]] <- surface_avg_air_scatter_cum_norm_plot
+  }
+}, error = function(e) {
+  surface_scatter_cumulative_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+  surface_scatter_cumulative_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+  log_missing_data("Average", "Surface Cumulative Scatter", "ERROR", paste("Error occurred:", e$message))
+})
+
+# Surface binned scatter average with normalization and logging
+tryCatch({
+  lines_added_avg <- 0
+  lines_added_air <- 0
+  
+  surface_avg_scatter_bin_norm_plot <- ggplot()
+  surface_avg_air_scatter_bin_norm_plot <- ggplot()
+  
+  # Try standard average binned data
+  if(exists("surface_average_binned")) {
+    s_avg_bin_area_col <- get_column_name(surface_average_binned, c("log_area", "Area"))
+    s_avg_bin_scatter_col <- get_column_name(surface_average_binned, c("Average_Scatter"))
+    
+    if (!is.null(s_avg_bin_area_col) && !is.null(s_avg_bin_scatter_col)) {
+      surface_avg_bin_norm <- normalize_scatter_data(surface_average_binned, s_avg_bin_scatter_col)
+      surface_avg_scatter_bin_norm_plot <- surface_avg_scatter_bin_norm_plot +
+        geom_line(data = surface_avg_bin_norm,
+                  aes_string(x = s_avg_bin_area_col, y = "normalized_scatter"),
+                  color = "#D55E00", 
+                  linetype = "solid")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Binned Scatter", "Surface", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Binned Scatter", "Surface", "Dataset does not exist")
+  }
+  
+  if(exists("wit_surface_average_binned")) {
+    wit_avg_bin_area_col <- get_column_name(wit_surface_average_binned, c("log_area", "Area"))
+    wit_avg_bin_scatter_col <- get_column_name(wit_surface_average_binned, c("Average_Scatter"))
+    
+    if (!is.null(wit_avg_bin_area_col) && !is.null(wit_avg_bin_scatter_col)) {
+      wit_avg_bin_norm <- normalize_scatter_data(wit_surface_average_binned, wit_avg_bin_scatter_col)
+      surface_avg_scatter_bin_norm_plot <- surface_avg_scatter_bin_norm_plot +
+        geom_line(data = wit_avg_bin_norm,
+                  aes_string(x = wit_avg_bin_area_col, y = "normalized_scatter"),
+                  color = "#009E73", 
+                  linetype = "dashed")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Binned Scatter", "Witness", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Binned Scatter", "Witness", "Dataset does not exist")
+  }
+  
+  if(exists("cw_surface_average_binned")) {
+    cw_avg_bin_area_col <- get_column_name(cw_surface_average_binned, c("log_area", "Area"))
+    cw_avg_bin_scatter_col <- get_column_name(cw_surface_average_binned, c("Average_Scatter"))
+    
+    if (!is.null(cw_avg_bin_area_col) && !is.null(cw_avg_bin_scatter_col)) {
+      cw_avg_bin_norm <- normalize_scatter_data(cw_surface_average_binned, cw_avg_bin_scatter_col)
+      surface_avg_scatter_bin_norm_plot <- surface_avg_scatter_bin_norm_plot +
+        geom_line(data = cw_avg_bin_norm,
+                  aes_string(x = cw_avg_bin_area_col, y = "normalized_scatter"),
+                  color = "#CC79A7", 
+                  linetype = "dotted")
+      lines_added_avg <- lines_added_avg + 1
+    } else {
+      log_missing_data("Average", "Surface Binned Scatter", "Calibration", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Average", "Surface Binned Scatter", "Calibration", "Dataset does not exist")
+  }
+  
+  # Try air average binned data
+  if(exists("surface_average_air_binned")) {
+    s_avg_air_bin_area_col <- get_column_name(surface_average_air_binned, c("log_area", "Area"))
+    s_avg_air_bin_scatter_col <- get_column_name(surface_average_air_binned, c("Average_Scatter"))
+    
+    if (!is.null(s_avg_air_bin_area_col) && !is.null(s_avg_air_bin_scatter_col)) {
+      surface_avg_air_bin_norm <- normalize_scatter_data(surface_average_air_binned, s_avg_air_bin_scatter_col)
+      surface_avg_air_scatter_bin_norm_plot <- surface_avg_air_scatter_bin_norm_plot +
+        geom_line(data = surface_avg_air_bin_norm,
+                  aes_string(x = s_avg_air_bin_area_col, y = "normalized_scatter"),
+                  color = "#D55E00", 
+                  linetype = "solid")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Binned Scatter", "Surface", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Binned Scatter", "Surface", "Dataset does not exist")
+  }
+  
+  if(exists("wit_surface_average_air_binned")) {
+    wit_avg_air_bin_area_col <- get_column_name(wit_surface_average_air_binned, c("log_area", "Area"))
+    wit_avg_air_bin_scatter_col <- get_column_name(wit_surface_average_air_binned, c("Average_Scatter"))
+    
+    if (!is.null(wit_avg_air_bin_area_col) && !is.null(wit_avg_air_bin_scatter_col)) {
+      wit_avg_air_bin_norm <- normalize_scatter_data(wit_surface_average_air_binned, wit_avg_air_bin_scatter_col)
+      surface_avg_air_scatter_bin_norm_plot <- surface_avg_air_scatter_bin_norm_plot +
+        geom_line(data = wit_avg_air_bin_norm,
+                  aes_string(x = wit_avg_air_bin_area_col, y = "normalized_scatter"),
+                  color = "#009E73", 
+                  linetype = "dashed")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Binned Scatter", "Witness", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Binned Scatter", "Witness", "Dataset does not exist")
+  }
+  
+  if(exists("cw_surface_average_air_binned")) {
+    cw_avg_air_bin_area_col <- get_column_name(cw_surface_average_air_binned, c("log_area", "Area"))
+    cw_avg_air_bin_scatter_col <- get_column_name(cw_surface_average_air_binned, c("Average_Scatter"))
+    
+    if (!is.null(cw_avg_air_bin_area_col) && !is.null(cw_avg_air_bin_scatter_col)) {
+      cw_avg_air_bin_norm <- normalize_scatter_data(cw_surface_average_air_binned, cw_avg_air_bin_scatter_col)
+      surface_avg_air_scatter_bin_norm_plot <- surface_avg_air_scatter_bin_norm_plot +
+        geom_line(data = cw_avg_air_bin_norm,
+                  aes_string(x = cw_avg_air_bin_area_col, y = "normalized_scatter"),
+                  color = "#CC79A7", 
+                  linetype = "dotted")
+      lines_added_air <- lines_added_air + 1
+    } else {
+      log_missing_data("Air Average", "Surface Binned Scatter", "Calibration", "Missing required columns")
+    }
+  } else {
+    log_missing_data("Air Average", "Surface Binned Scatter", "Calibration", "Dataset does not exist")
+  }
+  
+  # Finalize plots or use fallback
+  if(lines_added_avg == 0) {
+    surface_scatter_binned_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+    log_missing_data("Average", "Surface Binned Scatter", "ALL", "No data lines available - using fallback")
+  } else {
+    surface_avg_scatter_bin_norm_plot <- surface_avg_scatter_bin_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Scatter"
+      ) +
+      compact_theme
+    surface_scatter_binned_norm_plots[[length(trial_order) + 1]] <- surface_avg_scatter_bin_norm_plot
+  }
+  
+  if(lines_added_air == 0) {
+    surface_scatter_binned_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+    log_missing_data("Air Average", "Surface Binned Scatter", "ALL", "No data lines available - using fallback")
+  } else {
+    surface_avg_air_scatter_bin_norm_plot <- surface_avg_air_scatter_bin_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Scatter"
+      ) +
+      compact_theme
+    surface_scatter_binned_norm_plots[[length(trial_order) + 2]] <- surface_avg_air_scatter_bin_norm_plot
+  }
+}, error = function(e) {
+  surface_scatter_binned_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+  surface_scatter_binned_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+  log_missing_data("Average", "Surface Binned Scatter", "ERROR", paste("Error occurred:", e$message))
+})
+
+# Edge cumulative scatter average with normalization and logging
+tryCatch({
+  lines_added_avg <- 0
+  lines_added_air <- 0
+  
+  edge_avg_scatter_cum_norm_plot <- ggplot()
+  edge_avg_air_scatter_cum_norm_plot <- ggplot()
+  
+  # Try standard average data for edge cumulative scatter
+  edge_datasets <- list(
+    list(name = "edge_average", color = "#CC79A7", linetype = "solid", label = "Edge"),
+    list(name = "cw_edge_average", color = "#0072B2", linetype = "dashed", label = "CW_Edge"),
+    list(name = "SSLSM_edge_average", color = "#D55E00", linetype = "dotdash", label = "SSLSM_Edge"),
+    list(name = "WSLSM_edge_average", color = "#56B4E9", linetype = "longdash", label = "WSLSM_Edge"),
+    list(name = "CSLSM_edge_average", color = "#F0E442", linetype = "twodash", label = "CSLSM_Edge")
+  )
+  
+  edge_air_datasets <- list(
+    list(name = "edge_average_air", color = "#CC79A7", linetype = "solid", label = "Edge"),
+    list(name = "cw_edge_average_air", color = "#0072B2", linetype = "dashed", label = "CW_Edge"),
+    list(name = "SSLSM_edge_average_air", color = "#D55E00", linetype = "dotdash", label = "SSLSM_Edge"),
+    list(name = "WSLSM_edge_average_air", color = "#56B4E9", linetype = "longdash", label = "WSLSM_Edge"),
+    list(name = "CSLSM_edge_average_air", color = "#F0E442", linetype = "twodash", label = "CSLSM_Edge")
+  )
+  
+  # Process standard average datasets
+  for(dataset in edge_datasets) {
+    if(exists(dataset$name)) {
+      data <- get(dataset$name)
+      area_col <- get_column_name(data, c("log_area", "Area"))
+      scatter_col <- get_column_name(data, c("Average_Scatter"))
+      
+      if (!is.null(area_col) && !is.null(scatter_col)) {
+        data_norm <- normalize_scatter_data(data, scatter_col)
+        edge_avg_scatter_cum_norm_plot <- edge_avg_scatter_cum_norm_plot +
+          geom_line(data = data_norm,
+                    aes_string(x = area_col, y = "normalized_scatter"),
+                    color = dataset$color, 
+                    linetype = dataset$linetype)
+        lines_added_avg <- lines_added_avg + 1
+      } else {
+        log_missing_data("Average", "Edge Cumulative Scatter", dataset$label, "Missing required columns")
+      }
+    } else {
+      log_missing_data("Average", "Edge Cumulative Scatter", dataset$label, "Dataset does not exist")
+    }
+  }
+  
+  # Process air average datasets
+  for(dataset in edge_air_datasets) {
+    if(exists(dataset$name)) {
+      data <- get(dataset$name)
+      area_col <- get_column_name(data, c("log_area", "Area"))
+      scatter_col <- get_column_name(data, c("Average_Scatter"))
+      
+      if (!is.null(area_col) && !is.null(scatter_col)) {
+        data_norm <- normalize_scatter_data(data, scatter_col)
+        edge_avg_air_scatter_cum_norm_plot <- edge_avg_air_scatter_cum_norm_plot +
+          geom_line(data = data_norm,
+                    aes_string(x = area_col, y = "normalized_scatter"),
+                    color = dataset$color, 
+                    linetype = dataset$linetype)
+        lines_added_air <- lines_added_air + 1
+      } else {
+        log_missing_data("Air Average", "Edge Cumulative Scatter", dataset$label, "Missing required columns")
+      }
+    } else {
+      log_missing_data("Air Average", "Edge Cumulative Scatter", dataset$label, "Dataset does not exist")
+    }
+  }
+  
+  # Finalize plots or use fallback
+  if(lines_added_avg == 0) {
+    edge_scatter_cumulative_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+    log_missing_data("Average", "Edge Cumulative Scatter", "ALL", "No data lines available - using fallback")
+  } else {
+    edge_avg_scatter_cum_norm_plot <- edge_avg_scatter_cum_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Scatter"
+      ) +
+      compact_theme
+    edge_scatter_cumulative_norm_plots[[length(trial_order) + 1]] <- edge_avg_scatter_cum_norm_plot
+  }
+  
+  if(lines_added_air == 0) {
+    edge_scatter_cumulative_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+    log_missing_data("Air Average", "Edge Cumulative Scatter", "ALL", "No data lines available - using fallback")
+  } else {
+    edge_avg_air_scatter_cum_norm_plot <- edge_avg_air_scatter_cum_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Scatter"
+      ) +
+      compact_theme
+    edge_scatter_cumulative_norm_plots[[length(trial_order) + 2]] <- edge_avg_air_scatter_cum_norm_plot
+  }
+}, error = function(e) {
+  edge_scatter_cumulative_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+  edge_scatter_cumulative_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+  log_missing_data("Average", "Edge Cumulative Scatter", "ERROR", paste("Error occurred:", e$message))
+})
+
+# Edge binned scatter average with normalization and logging
+tryCatch({
+  lines_added_avg <- 0
+  lines_added_air <- 0
+  
+  edge_avg_scatter_bin_norm_plot <- ggplot()
+  edge_avg_air_scatter_bin_norm_plot <- ggplot()
+  
+  # Define datasets for edge binned scatter average
+  edge_bin_datasets <- list(
+    list(name = "edge_average_binned", color = "#CC79A7", linetype = "solid", label = "Edge"),
+    list(name = "cw_edge_average_binned", color = "#0072B2", linetype = "dashed", label = "CW_Edge"),
+    list(name = "SSLSM_edge_average_binned", color = "#D55E00", linetype = "dotdash", label = "SSLSM_Edge"),
+    list(name = "WSLSM_edge_average_binned", color = "#56B4E9", linetype = "longdash", label = "WSLSM_Edge"),
+    list(name = "CSLSM_edge_average_binned", color = "#F0E442", linetype = "twodash", label = "CSLSM_Edge")
+  )
+  
+  edge_air_bin_datasets <- list(
+    list(name = "edge_average_air_binned", color = "#CC79A7", linetype = "solid", label = "Edge"),
+    list(name = "cw_edge_average_air_binned", color = "#0072B2", linetype = "dashed", label = "CW_Edge"),
+    list(name = "SSLSM_edge_average_air_binned", color = "#D55E00", linetype = "dotdash", label = "SSLSM_Edge"),
+    list(name = "WSLSM_edge_average_air_binned", color = "#56B4E9", linetype = "longdash", label = "WSLSM_Edge"),
+    list(name = "CSLSM_edge_average_air_binned", color = "#F0E442", linetype = "twodash", label = "CSLSM_Edge")
+  )
+  
+  # Process standard average binned datasets
+  for(dataset in edge_bin_datasets) {
+    if(exists(dataset$name)) {
+      data <- get(dataset$name)
+      area_col <- get_column_name(data, c("log_area", "Area"))
+      scatter_col <- get_column_name(data, c("Average_Scatter"))
+      
+      if (!is.null(area_col) && !is.null(scatter_col)) {
+        data_norm <- normalize_scatter_data(data, scatter_col)
+        edge_avg_scatter_bin_norm_plot <- edge_avg_scatter_bin_norm_plot +
+          geom_line(data = data_norm,
+                    aes_string(x = area_col, y = "normalized_scatter"),
+                    color = dataset$color, 
+                    linetype = dataset$linetype)
+        lines_added_avg <- lines_added_avg + 1
+      } else {
+        log_missing_data("Average", "Edge Binned Scatter", dataset$label, "Missing required columns")
+      }
+    } else {
+      log_missing_data("Average", "Edge Binned Scatter", dataset$label, "Dataset does not exist")
+    }
+  }
+  
+  # Process air average binned datasets
+  for(dataset in edge_air_bin_datasets) {
+    if(exists(dataset$name)) {
+      data <- get(dataset$name)
+      area_col <- get_column_name(data, c("log_area", "Area"))
+      scatter_col <- get_column_name(data, c("Average_Scatter"))
+      
+      if (!is.null(area_col) && !is.null(scatter_col)) {
+        data_norm <- normalize_scatter_data(data, scatter_col)
+        edge_avg_air_scatter_bin_norm_plot <- edge_avg_air_scatter_bin_norm_plot +
+          geom_line(data = data_norm,
+                    aes_string(x = area_col, y = "normalized_scatter"),
+                    color = dataset$color, 
+                    linetype = dataset$linetype)
+        lines_added_air <- lines_added_air + 1
+      } else {
+        log_missing_data("Air Average", "Edge Binned Scatter", dataset$label, "Missing required columns")
+      }
+    } else {
+      log_missing_data("Air Average", "Edge Binned Scatter", dataset$label, "Dataset does not exist")
+    }
+  }
+  
+  # Finalize plots or use fallback
+  if(lines_added_avg == 0) {
+    edge_scatter_binned_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+    log_missing_data("Average", "Edge Binned Scatter", "ALL", "No data lines available - using fallback")
+  } else {
+    edge_avg_scatter_bin_norm_plot <- edge_avg_scatter_bin_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Scatter"
+      ) +
+      compact_theme
+    edge_scatter_binned_norm_plots[[length(trial_order) + 1]] <- edge_avg_scatter_bin_norm_plot
+  }
+  
+  if(lines_added_air == 0) {
+    edge_scatter_binned_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+    log_missing_data("Air Average", "Edge Binned Scatter", "ALL", "No data lines available - using fallback")
+  } else {
+    edge_avg_air_scatter_bin_norm_plot <- edge_avg_air_scatter_bin_norm_plot +
+      labs(
+        x = expression(log[10](Area)),
+        y = "Normalized Scatter"
+      ) +
+      compact_theme
+    edge_scatter_binned_norm_plots[[length(trial_order) + 2]] <- edge_avg_air_scatter_bin_norm_plot
+  }
+}, error = function(e) {
+  edge_scatter_binned_norm_plots[[length(trial_order) + 1]] <- create_fallback_plot()
+  edge_scatter_binned_norm_plots[[length(trial_order) + 2]] <- create_fallback_plot()
+  log_missing_data("Average", "Edge Binned Scatter", "ERROR", paste("Error occurred:", e$message))
+})
+
+# Print comprehensive missing data log
+cat("\n=== MISSING DATA LOG ===\n")
+cat("Total missing data entries:", length(missing_data_log), "\n\n")
+if(length(missing_data_log) > 0) {
+  for(i in 1:length(missing_data_log)) {
+    cat(paste0(i, ". ", missing_data_log[[i]], "\n"))
+  }
+} else {
+  cat("No missing data detected - all datasets loaded successfully!\n")
+}
+cat("\n========================\n")
+
+# Create standalone legend grobs for surface and edge plots
+surface_legend <- grobTree(
+  # Starshade
+  linesGrob(x = unit(c(0.1, 0.4), "npc"), y = unit(0.8, "npc"), 
+            gp = gpar(col = "#D55E00", lty = "solid", lwd = 4)),
+  textGrob("Starshade", x = unit(0.5, "npc"), y = unit(0.8, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  # Witness
+  linesGrob(x = unit(c(0.1, 0.4), "npc"), y = unit(0.5, "npc"), 
+            gp = gpar(col = "#009E73", lty = "dashed", lwd = 4)),
+  textGrob("Witness", x = unit(0.5, "npc"), y = unit(0.5, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  # Calibration
+  linesGrob(x = unit(c(0.1, 0.4), "npc"), y = unit(0.2, "npc"), 
+            gp = gpar(col = "#CC79A7", lty = "dotted", lwd = 4)),
+  textGrob("Calibration", x = unit(0.5, "npc"), y = unit(0.2, "npc"), 
+           just = "left", gp = gpar(fontsize = 20))
+)
+
+# Edge legend (more complex with 5 items)
+edge_legend <- grobTree(
+  # First column
+  linesGrob(x = unit(c(0.05, 0.25), "npc"), y = unit(0.8, "npc"), 
+            gp = gpar(col = "#CC79A7", lty = "solid", lwd = 4)),
+  textGrob("Starshade Observed", x = unit(0.3, "npc"), y = unit(0.8, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  linesGrob(x = unit(c(0.05, 0.25), "npc"), y = unit(0.5, "npc"), 
+            gp = gpar(col = "#0072B2", lty = "dashed", lwd = 4)),
+  textGrob("Calibration Observed", x = unit(0.3, "npc"), y = unit(0.5, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  # Second column
+  linesGrob(x = unit(c(0.55, 0.75), "npc"), y = unit(0.8, "npc"), 
+            gp = gpar(col = "#D55E00", lty = "dotdash", lwd = 4)),
+  textGrob("SLSM Starshade", x = unit(0.8, "npc"), y = unit(0.8, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  linesGrob(x = unit(c(0.55, 0.75), "npc"), y = unit(0.5, "npc"), 
+            gp = gpar(col = "#56B4E9", lty = "longdash", lwd = 4)),
+  textGrob("SLSM Witness", x = unit(0.8, "npc"), y = unit(0.5, "npc"), 
+           just = "left", gp = gpar(fontsize = 20)),
+  
+  linesGrob(x = unit(c(0.55, 0.75), "npc"), y = unit(0.2, "npc"), 
+            gp = gpar(col = "#F0E442", lty = "twodash", lwd = 4)),
+  textGrob("SLSM Calibration", x = unit(0.8, "npc"), y = unit(0.2, "npc"), 
+           just = "left", gp = gpar(fontsize = 20))
+)
+
+# Create column and row labels with consistent formatting
+col_labels <- c(
+  lapply(trial_order, function(t) textGrob(paste("Trial", t), gp = gpar(fontsize = 22, fontface = "bold"))),
+  list(
+    textGrob("Average", gp = gpar(fontsize = 22, fontface = "bold")),
+    textGrob("Air Average", gp = gpar(fontsize = 22, fontface = "bold"))
+  )
+)
+
+row_labels <- list(
+  textGrob("Surface\nCumulative\nScatter", gp = gpar(fontsize = 22, fontface = "bold"), rot = 90),
+  textGrob("Surface\nBinned\nScatter", gp = gpar(fontsize = 22, fontface = "bold"), rot = 90),
+  textGrob("Edge\nCumulative\nScatter", gp = gpar(fontsize = 22, fontface = "bold"), rot = 90),
+  textGrob("Edge\nBinned\nScatter", gp = gpar(fontsize = 22, fontface = "bold"), rot = 90)
+)
+
+# Assemble the complete grid layout
+scatter_grid <- grid.arrange(
+  # Main title 
+  textGrob("Comprehensive Particle Scatter Distribution Analysis Across Trials - Normalized Scatter", 
+           gp = gpar(fontsize = 36, fontface = "bold"), y = 0.7),
+  
+  # Main grid
+  grid.arrange(
+    # Column labels
+    arrangeGrob(
+      nullGrob(), 
+      col_labels[[1]], col_labels[[2]], col_labels[[3]], col_labels[[4]], 
+      col_labels[[5]], col_labels[[6]], col_labels[[7]], col_labels[[8]],
+      ncol = 9, widths = c(0.25, 1, 1, 1, 1, 1, 1, 1, 1),
+      heights = unit(0.2, "cm")
+    ),
+    
+    # Main plot grid with row labels
+    arrangeGrob(
+      # Surface Cumulative row
+      row_labels[[1]],
+      surface_scatter_cumulative_norm_plots[[1]], surface_scatter_cumulative_norm_plots[[2]], 
+      surface_scatter_cumulative_norm_plots[[3]], surface_scatter_cumulative_norm_plots[[4]], 
+      surface_scatter_cumulative_norm_plots[[5]], surface_scatter_cumulative_norm_plots[[6]], 
+      surface_scatter_cumulative_norm_plots[[7]], surface_scatter_cumulative_norm_plots[[8]],
+      
+      # Surface Binned row
+      row_labels[[2]],
+      surface_scatter_binned_norm_plots[[1]], surface_scatter_binned_norm_plots[[2]], 
+      surface_scatter_binned_norm_plots[[3]], surface_scatter_binned_norm_plots[[4]], 
+      surface_scatter_binned_norm_plots[[5]], surface_scatter_binned_norm_plots[[6]], 
+      surface_scatter_binned_norm_plots[[7]], surface_scatter_binned_norm_plots[[8]],
+      
+      # Edge Cumulative row
+      row_labels[[3]],
+      edge_scatter_cumulative_norm_plots[[1]], edge_scatter_cumulative_norm_plots[[2]], 
+      edge_scatter_cumulative_norm_plots[[3]], edge_scatter_cumulative_norm_plots[[4]], 
+      edge_scatter_cumulative_norm_plots[[5]], edge_scatter_cumulative_norm_plots[[6]], 
+      edge_scatter_cumulative_norm_plots[[7]], edge_scatter_cumulative_norm_plots[[8]],
+      
+      # Edge Binned row
+      row_labels[[4]],
+      edge_scatter_binned_norm_plots[[1]], edge_scatter_binned_norm_plots[[2]], 
+      edge_scatter_binned_norm_plots[[3]], edge_scatter_binned_norm_plots[[4]], 
+      edge_scatter_binned_norm_plots[[5]], edge_scatter_binned_norm_plots[[6]], 
+      edge_scatter_binned_norm_plots[[7]], edge_scatter_binned_norm_plots[[8]],
+      
+      ncol = 9, widths = c(0.25, 1, 1, 1, 1, 1, 1, 1, 1)
+    ),
+    
+    # Legend section
+    arrangeGrob(
+      textGrob("Surface Plot Legend:", gp = gpar(fontsize = 22, fontface = "bold")), 
+      surface_legend,
+      textGrob("Edge Plot Legend:", gp = gpar(fontsize = 22, fontface = "bold")), 
+      edge_legend,
+      ncol = 4, widths = c(0.4, 1.3, 0.4, 1.3)
+    ),
+    
+    # Layout adjustment
+    nrow = 3,
+    heights = c(0.1, 4, 0.5)
+  ),
+  
+  # Overall layout parameters
+  heights = c(0.05, 0.95)
+)
+
+# Display the complete grid
+print(scatter_grid)
+
+# Save to high-resolution image
+ggsave("particle_scatter_distribution_comparison_normalized.png", scatter_grid, width = 40, height = 20, dpi = 300)
+
+```
+
 ## 11. Combined Analysis and Comparison
 
 <!-- This section combines and compares all analyses to validate the edge contamination model -->
@@ -10245,7 +12789,7 @@ ggplot() +
 
 ## 12. Multiple Line analysis
 
-```{r Multiple_line_analysis}
+```{r Multiple_line_analysis, include=FALSE, echo = FALSE, eval=FALSE}
 # This section simulates drawing a line across surfaces and analyzes how particles intersect with it
 # Expanded to cover trials 9, 12, 13, 14 and all three surfaces: starshade, calibration, and witness
 
