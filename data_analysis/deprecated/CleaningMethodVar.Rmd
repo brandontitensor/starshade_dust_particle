@@ -1,0 +1,628 @@
+---
+title: "Analysis of Surface Cleaning Methods"
+author: "Brandon Titensor"
+date: "2025-01-28"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(knitr)
+library(rstatix)
+library(ggpubr)
+library(gridExtra)
+library(data.table)
+library(cowplot)
+library(ggplot2)
+library(dplyr)
+library(grid)
+library(kableExtra)
+library(broom)
+
+# Define consistent color palette
+cleaning_colors <- c(
+  "IPA rinse" = "#E41A1C",           # red
+  "Drag and wipe" = "#377EB8",       # blue
+  "First contact" = "#4DAF4A",       # green
+  "First contact & Drag and wipe" = "#984EA3"  # purple
+)
+
+# Create unified theme
+custom_theme <- theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 10, hjust = 0.5),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 8),
+    legend.position = "bottom",
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_line(color = "gray95")
+  )
+```
+
+## 1. Data Loading and Processing
+
+```{r load_data}
+# Function to load and process surface data
+load_surface_data <- function(condition) {
+  # Load particle data for a single sample
+  load_particle_data <- function(trial_number, sample_number, cond) {
+    tryCatch({
+      particle_path <- sprintf("/Volumes/BRANDONMEGA\ 1/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Particles_%sTr%dSa%dSurf.csv", 
+                             cond, trial_number, sample_number, cond, trial_number, sample_number)
+      
+      particle_data <- read_csv(particle_path)
+      particle_data <- particle_data[, 2:(ncol(particle_data)-2)]
+      particle_data$Sample <- sample_number
+      particle_data$Trial <- trial_number
+      
+      return(particle_data)
+    }, error = function(e) {
+      message(sprintf("Error loading particle data for %s Trial %d, Sample %d: %s", 
+                     cond, trial_number, sample_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Load and process summary data
+  load_summary_data <- function(trial_number, sample_number, cond) {
+    tryCatch({
+      summary_path <- sprintf("/Volumes/BRANDONMEGA\ 1/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Summary_%sTr%dSa%dSurf.csv", 
+                            cond, trial_number, sample_number, cond, trial_number, sample_number)
+      
+      summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
+      names(summary_data) <- make.names(names(summary_data))
+      summary_data <- summary_data %>% 
+        drop_na() %>%
+        mutate(
+          Sample = sample_number,
+          Trial = trial_number,
+          Slice_Number = as.integer(substr(Slice, nchar(Slice)-6, nchar(Slice)-4))
+        )
+      
+      return(summary_data)
+    }, error = function(e) {
+      message(sprintf("Error loading summary data for %s Trial %d, Sample %d: %s", 
+                     cond, trial_number, sample_number, e$message))
+      return(NULL)
+    })
+  }
+
+  # Load data for all trials (1-11)
+  surface_particle_data <- map2(rep(1:11, each = 5), rep(1:5, times = 11), 
+                              ~load_particle_data(.x, .y, condition))
+  surface_summary_data <- map2(rep(1:11, each = 5), rep(1:5, times = 11), 
+                             ~load_summary_data(.x, .y, condition))
+
+  # Combine data
+  surface_particle_data <- bind_rows(surface_particle_data)
+  surface_summary_data <- bind_rows(surface_summary_data)
+
+  # Add cleaning method information
+  add_cleaning_method <- function(data) {
+    data %>%
+      mutate(Cleaning_Method = case_when(
+        Trial %in% c(1, 2,3) ~ "IPA rinse",
+        Trial %in% c(4,5) ~ "Drag and wipe",
+        Trial %in% c(6,7) ~ "First contact",
+        Trial %in% c(8, 9, 10,11) ~ "First contact & Drag and wipe",
+        TRUE ~ NA_character_
+      ))
+  }
+
+  surface_particle_data <- add_cleaning_method(surface_particle_data)
+  surface_summary_data <- add_cleaning_method(surface_summary_data)
+
+  # Calculate surveyed areas
+  image_size <- 600 * 450 # microns^2
+  trial_areas <- surface_summary_data %>%
+    group_by(Trial, Cleaning_Method) %>%
+    summarise(
+      Total_Images = n(),
+      Total_Area = Total_Images * image_size * 1e-12, # Convert to m^2
+      .groups = "drop"
+    )
+
+  list(particle_data = surface_particle_data, 
+       summary_data = surface_summary_data, 
+       trial_areas = trial_areas)
+}
+
+# Load before and after data
+surface_before_data <- load_surface_data("Bef")
+surface_after_data <- load_surface_data("Aft")
+
+
+```
+
+## 2. Area-Based Distribution Analysis
+
+```{r area_analysis}
+surface_before_particles <- surface_before_data$particle_data %>%
+  filter(Area > 1)
+surface_after_particles <- surface_after_data$particle_data %>%
+  filter(Area > 1)
+combined_surface_data <- bind_rows(surface_before_particles,surface_after_particles)
+
+# Create diameter thresholds
+min_area <- 1  # Starting from 1 as per previous filter
+max_area <- max(combined_surface_data$Area)
+log_min <- log10(min_area)
+log_max <- log10(max_area)
+
+# Create 100 evenly spaced points on log scale
+area_thresholds <- 10^(seq(log_min, log_max, length.out = 250))
+
+#area_thresholds <- seq(1, max(combined_surface_data$Area), by = 10)
+
+# Define IEST standard parameters and calculate sample areas
+slope <- -0.926
+image_size <- 600 * 450 
+new_sample_areas <- surface_before_data$summary_data %>%
+  group_by(Sample, Trial, Cleaning_Method) %>%
+  summarise(
+    Total_Images = n(),
+    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
+    .groups = "drop"
+  )
+
+
+# Function to get area-based counts
+get_area_counts <- function(data, normalization_factor) {
+  sapply(area_thresholds, function(x) {
+    sum(data$Area > x) * normalization_factor
+  })
+}
+
+
+
+# Calculate area-based counts for before and after data
+surface_before_counts <- surface_before_data$particle_data %>%
+  group_by(Trial, Sample,Cleaning_Method) %>%
+  group_modify(~ {
+    norm_factor <- 0.1 /  new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
+    counts <- get_area_counts(.x, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
+    )
+  })
+
+surface_after_counts <- surface_after_data$particle_data %>%
+  group_by(Trial, Sample, Cleaning_Method) %>%
+  group_modify(~ {
+    norm_factor <- 0.1 /  new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
+    counts <- get_area_counts(.x, norm_factor)
+    tibble(
+      Area = area_thresholds,
+      Count = counts
+    )
+  })
+
+# Calculate differences and averages
+surface_count_diff <- surface_after_counts %>%
+  full_join(surface_before_counts, 
+            by = c("Trial", "Sample", "Area", "Cleaning_Method"), 
+            suffix = c("_After", "_Before")) %>%
+  mutate(Count_Diff = Count_After - Count_Before,
+         Positive_Diff = pmax(Count_Diff, 0))
+
+# Calculate average counts by trial
+average_surface_counts <- surface_count_diff %>%
+  group_by(Area,Trial, Sample, Cleaning_Method) %>%
+  summarize(
+    Average_Count = mean(Positive_Diff, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(log_area = log10(Area),
+         log_count = log10(Average_Count),
+         log_count = ifelse(log_count < 0, 0, log_count))
+
+average_surface_binned <- average_surface_counts %>%
+  group_by(Trial) %>%
+  arrange(desc(Area)) %>%  # Ensure data is sorted by descending area
+  mutate(
+    Count = c(Average_Count[1], diff(Average_Count))  # First value is the total, then differences
+  ) %>%
+  ungroup() %>% 
+  mutate(log_count_bin = log10(Count),
+         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+
+# Calculate overall average binned counts
+overall_average_surface_binned <- average_surface_binned %>%
+  group_by(Area) %>%
+  summarize(
+    Average_Count = mean(Count, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    log_area = log10(Area),
+    log_count = log10(Average_Count),
+    log_count = ifelse(log_count < 0 | !is.finite(log_count), 0, log_count)
+  )
+
+# Modify the binned distribution plot
+ggplot() +
+  geom_line(data = average_surface_binned, 
+            aes(x = log_area, y = log_count_bin, 
+                color = factor(Cleaning_Method))) +
+  geom_line(data = overall_average_surface_binned,
+            aes(x = log_area, y = log_count),
+            color = "black", size = 1.2) +  # Add distinct average line
+  scale_color_manual(values = cleaning_colors, name = "Trial") +
+  labs(
+    x = expression(Area~"(square microns)"),
+    y = "Average Particle Count",
+    title = "Surface Analysis: Binned Particle Size Distribution",
+    subtitle = "Particles binned by area thresholds\nBlack line: overall average"
+  ) +
+  custom_theme +
+  theme(
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+
+
+```
+
+```{r}
+# Calculate PCL and slope for each trial
+trial_stats <- average_surface_counts %>%
+  group_by(Trial, Cleaning_Method) %>%
+  filter(Average_Count > 0) %>%
+  summarise(
+    slope = coef(lm(log_count ~ log_area))[2],
+    intercept = coef(lm(log_count ~ log_area))[1],
+    PCL = 10^(-intercept/slope),
+    .groups = "drop"
+  )
+
+# Calculate summary statistics by cleaning method
+cleaning_summary <- trial_stats %>%
+  group_by(Cleaning_Method) %>%
+  summarise(
+    Mean_PCL = mean(PCL),
+    SD_PCL = sd(PCL),
+    CV_PCL = SD_PCL/Mean_PCL * 100,
+    Mean_slope = mean(slope),
+    SD_slope = sd(slope),
+    CV_slope = SD_slope/abs(Mean_slope) * 100,
+    n_trials = n()
+  )
+
+# Create summary statistics table
+kable(cleaning_summary, 
+      caption = "Summary Statistics by Cleaning Method",
+      digits = c(NA, 0, 0, 1, 3, 3, 1, 0)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+# Perform ANOVA
+pcl_anova <- aov(PCL ~ Cleaning_Method, data = trial_stats)
+slope_anova <- aov(slope ~ Cleaning_Method, data = trial_stats)
+
+# Create ANOVA results table
+anova_results <- bind_rows(
+  tidy(pcl_anova) %>% mutate(parameter = "PCL"),
+  tidy(slope_anova) %>% mutate(parameter = "Slope")
+)
+
+# Display ANOVA results
+kable(anova_results,
+      caption = "ANOVA Results for PCL and Slope by Cleaning Method",
+      digits = c(0, 0, 2, 2, 4)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+# Create visualization of distributions by cleaning method
+# Cumulative distribution plot
+ggplot(average_surface_counts, 
+       aes(x = log_area, y = log_count, color = Cleaning_Method)) +
+  geom_line() +
+  scale_color_manual(values = cleaning_colors) +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Cumulative Particle Distribution by Cleaning Method"
+  ) +
+  custom_theme
+
+# Create boxplots
+p1 <- ggplot(trial_stats, aes(x = Cleaning_Method, y = PCL, fill = Cleaning_Method)) +
+  geom_boxplot() +
+  scale_fill_manual(values = cleaning_colors) +
+  labs(
+    title = "PCL Distribution by Cleaning Method",
+    y = "PCL Value"
+  ) +
+  custom_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+p2 <- ggplot(trial_stats, aes(x = Cleaning_Method, y = slope, fill = Cleaning_Method)) +
+  geom_boxplot() +
+  scale_fill_manual(values = cleaning_colors) +
+  labs(
+    title = "Slope Distribution by Cleaning Method",
+    y = "Slope Value"
+  ) +
+  custom_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+grid.arrange(p1, p2, ncol = 1)
+
+# Create area-based binned distribution plot with individual trials
+ggplot() +
+  geom_line(data = average_surface_binned, 
+            aes(x = log_area, y = log_count_bin, 
+                color = Cleaning_Method, 
+                group = interaction(Cleaning_Method, Trial))) +
+  geom_line(data = average_surface_binned %>%
+              group_by(Cleaning_Method, Area, log_area) %>%
+              summarise(mean_count = mean(log_count_bin, na.rm = TRUE),
+                       .groups = "drop"),
+            aes(x = log_area, y = mean_count, color = Cleaning_Method),
+            size = 1.2) +
+  scale_color_manual(values = cleaning_colors) +
+  labs(
+    x = expression(log[10](Area)~"(square microns)"),
+    y = "log10(Particle Count)",
+    title = "Binned Particle Size Distribution by Cleaning Method",
+    subtitle = "Thin lines: individual trials, Thick lines: method averages"
+  ) +
+  custom_theme +
+  theme(panel.grid.minor = element_blank())
+```
+
+
+## 3. Statistical Analysis
+
+```{r statistical_analysis}
+# Perform ANOVA
+pcl_anova <- aov(PCL ~ Cleaning_Method, data = trial_stats)
+slope_anova <- aov(slope ~ Cleaning_Method, data = trial_stats)
+
+# Create ANOVA results table
+anova_results <- bind_rows(
+  tidy(pcl_anova) %>% mutate(parameter = "PCL"),
+  tidy(slope_anova) %>% mutate(parameter = "Slope")
+)
+
+# Display ANOVA results
+kable(anova_results,
+      caption = "ANOVA Results for PCL and Slope by Cleaning Method",
+      digits = c(0, 0, 2, 2, 4)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+# Create boxplots
+p1 <- ggplot(trial_stats, aes(x = Cleaning_Method, y = PCL, fill = Cleaning_Method)) +
+  geom_boxplot() +
+  scale_fill_manual(values = cleaning_colors) +
+  labs(title = "PCL Distribution by Cleaning Method",
+       y = "PCL Value") +
+  custom_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+p2 <- ggplot(trial_stats, aes(x = Cleaning_Method, y = slope, fill = Cleaning_Method)) +
+  geom_boxplot() +
+  scale_fill_manual(values = cleaning_colors) +
+  labs(title = "Slope Distribution by Cleaning Method",
+       y = "Slope Value") +
+  custom_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+grid.arrange(p1, p2, ncol = 1)
+```
+
+## 4. Key Findings
+
+1. Area-Based Distribution Analysis:
+   * All cleaning methods show log-normal distribution of particle removal
+   * First Contact & Drag and Wipe shows most effective particle removal across all size ranges
+   * Significant differences in PCL values between methods (p = `r format.pval(anova_results$p.value[1], digits = 3)`)
+   * Slope variations indicate different size-dependent cleaning effectiveness
+
+2. Method Effectiveness:
+   * Combined method (First Contact & Drag and Wipe) shows lowest mean PCL: `r round(filter(cleaning_summary, Cleaning_Method == "First contact & Drag and wipe")$Mean_PCL)`
+   * IPA rinse shows highest mean PCL: `r round(filter(cleaning_summary, Cleaning_Method == "IPA rinse")$Mean_PCL)`
+   * First Contact alone more effective than IPA rinse or Drag and Wipe alone
+
+3. Method Consistency:
+   * Similar CV values across methods (range: `r round(min(cleaning_summary$CV_PCL), 1)`% - `r round(max(cleaning_summary$CV_PCL), 1)`%)
+   * Combined method maintains consistency despite complexity
+   * No significant impact on variability from additional cleaning steps
+
+4. Recommendations:
+   * First Contact & Drag and Wipe recommended as primary cleaning method
+   * Consider method selection based on particle size requirements
+   * Multiple cleaning steps do not significantly increase variability
+   * Further optimization possible for specific size ranges
+   
+   
+   
+```{r}
+
+# Function to read and prepare particle data
+prepare_particle_data <- function(file_path) {
+  if (!file.exists(file_path)) {
+    stop(paste("File not found:", file_path))
+  }
+  
+  particles <- read.csv(file_path)
+  
+  # Check for required columns
+  required_cols <- c("XM", "YM", "Area", "Width", "Height")
+  missing_cols <- setdiff(required_cols, names(particles))
+  if (length(missing_cols) > 0) {
+    stop(paste("Missing required columns:", paste(missing_cols, collapse = ", ")))
+  }
+  
+  # Add unique identifier for each particle
+  particles$particle_id <- 1:nrow(particles)
+  return(particles)
+}
+
+# Function to adjust coordinates based on image position in grid
+adjust_coordinates <- function(particles_df, summary_df) {
+  # Calculate image positions in the grid (8 rows x 63 columns)
+  image_width <- max(particles_df$Width, na.rm = TRUE)  # Approximate image width
+  image_height <- max(particles_df$Height, na.rm = TRUE) # Approximate image height
+  
+  # Extract image number and create row/column positions
+  summary_df <- summary_df %>%
+    mutate(
+      image_num = as.numeric(gsub(".*surface([0-9]+)\\.jpg$", "\\1", Slice)),
+      col = ((image_num - 1) %% 63) + 1,
+      row = ((image_num - 1) %/% 63) + 1
+    )
+  
+  # Join summary information with particles
+  particles_df <- particles_df %>%
+    mutate(
+      image_num = as.numeric(gsub(".*surface([0-9]+)\\.jpg$", "\\1", Slice))
+    ) %>%
+    left_join(select(summary_df, image_num, row, col), by = "image_num")
+  
+  # Calculate global coordinates
+  particles_df <- particles_df %>%
+    mutate(
+      global_x = XM + (col - 1) * (image_width * 0.8),  # 0.8 accounts for 20% overlap
+      global_y = YM + (row - 1) * (image_height * 0.8)
+    )
+  
+  return(particles_df)
+}
+
+# Function to find matching particles between before and after images
+find_matching_particles <- function(before_df, after_df, max_distance = 5) {
+  if (nrow(before_df) == 0 || nrow(after_df) == 0) {
+    warning("Empty dataset provided")
+    return(data.frame())
+  }
+  
+  # Create point patterns
+  before_points <- ppp(before_df$global_x, before_df$global_y, 
+                      window = owin(range(c(before_df$global_x, after_df$global_x)),
+                                  range(c(before_df$global_y, after_df$global_y))))
+  after_points <- ppp(after_df$global_x, after_df$global_y, 
+                     window = owin(range(c(before_df$global_x, after_df$global_x)),
+                                 range(c(before_df$global_y, after_df$global_y))))
+  
+  # Find nearest neighbors
+  nn <- nncross(after_points, before_points)
+  
+  # Create matching dataframe
+  matches <- data.frame(
+    after_id = 1:nrow(after_df),
+    before_id = nn$which,
+    distance = nn$dist
+  )
+  
+  # Filter matches based on maximum distance and similar properties
+  valid_matches <- matches %>%
+    filter(distance <= max_distance) %>%
+    mutate(
+      after_area = after_df$Area[after_id],
+      before_area = before_df$Area[before_id]
+    ) %>%
+    filter(abs(after_area - before_area) / before_area <= 0.2)  # Allow 20% size difference
+  
+  return(valid_matches)
+}
+
+# Function to identify new particles from contamination
+identify_new_particles <- function(before_df, after_df, matches) {
+  # Get IDs of after particles that don't have a match
+  new_particle_ids <- setdiff(1:nrow(after_df), matches$after_id)
+  
+  # Extract new particles
+  new_particles <- after_df[new_particle_ids, ]
+  
+  return(new_particles)
+}
+
+# Main analysis function
+analyze_contamination <- function(before_particles_path, after_particles_path, 
+                                before_summary_path, after_summary_path) {
+  # Read and prepare data
+  tryCatch({
+    before_particles <- prepare_particle_data(before_particles_path)
+    after_particles <- prepare_particle_data(after_particles_path)
+    before_summary <- read.csv(before_summary_path)
+    after_summary <- read.csv(after_summary_path)
+    
+    # Adjust coordinates
+    before_particles <- adjust_coordinates(before_particles, before_summary)
+    after_particles <- adjust_coordinates(after_particles, after_summary)
+    
+    # Find matching particles
+    matches <- find_matching_particles(before_particles, after_particles)
+    
+    # Identify new particles from contamination
+    contamination_particles <- identify_new_particles(before_particles, after_particles, matches)
+    
+    # Generate summary statistics
+    summary_stats <- list(
+      total_before = nrow(before_particles),
+      total_after = nrow(after_particles),
+      matched_particles = nrow(matches),
+      new_particles = nrow(contamination_particles),
+      mean_new_particle_area = mean(contamination_particles$Area),
+      total_contamination_area = sum(contamination_particles$Area)
+    )
+    
+    return(list(
+      contamination_particles = contamination_particles,
+      summary_stats = summary_stats,
+      matches = matches
+    ))
+    
+  }, error = function(e) {
+    message("Error in analysis: ", e$message)
+    return(message)
+  })
+}
+
+# Example usage with proper error handling:
+analyze_particles <- function(before_particles_path, after_particles_path,
+                            before_summary_path, after_summary_path) {
+  tryCatch({
+    results <- analyze_contamination(
+      before_particles_path,
+      after_particles_path, 
+      before_summary_path,
+      after_summary_path
+    )
+    
+    if (!is.null(results)) {
+      print("Analysis completed successfully")
+      print("Summary statistics:")
+      print(results$summary_stats)
+      return(results)
+    } else {
+      print("Analysis failed")
+      return(NULL)
+    }
+    
+  }, error = function(e) {
+    message("Error in particle analysis: ", e$message)
+    return(NULL)
+  })
+}
+#Example usage:
+results <- analyze_contamination(
+  "/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Surfaces/BefTr1Sa1Surf/Particles_BefTr1Sa1Surf.csv",
+  "/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Surfaces/AftTr1Sa1Surf/Particles_AftTr1Sa1Surf.csv",
+  "/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Surfaces/BefTr1Sa1Surf/Summary_BefTr1Sa1Surf.csv",
+  "/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Surfaces/AftTr1Sa1Surf/Summary_AftTr1Sa1Surf.csv"
+)
+```
+   
+   

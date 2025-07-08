@@ -78,14 +78,25 @@ line_types <- c(
 # Function to load and process a single sample of edge data
 # This reads both particle details and summary information from CSV files
 load_sample_data <- function(sample_number) {
-  # Format sample number with leading zeros
   sample_str <- sprintf("%02d", sample_number)
   
-  # Construct file paths for particles and summary data
-  particles_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", 
-                          sample_str, sample_str, sample_str, sample_str)
-  summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", 
-                         sample_str, sample_str, sample_str, sample_str)
+  # Use file.path() which handles spaces better
+  base_dir <- "/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Edges/Edge Measurements"
+  folder_name <- paste0("Bef_", sample_str, " minus Aft_", sample_str)
+  
+  particles_file <- paste0("Particles Bef_", sample_str, " minus Aft_", sample_str, ".csv")
+  summary_file <- paste0("Summary Bef_", sample_str, " minus Aft_", sample_str, ".csv")
+  
+  particles_path <- file.path(base_dir, folder_name, particles_file)
+  summary_path <- file.path(base_dir, folder_name, summary_file)
+  
+  # Check if files exist
+  if (!file.exists(particles_path)) {
+    stop(paste("Particles file not found:", particles_path))
+  }
+  if (!file.exists(summary_path)) {
+    stop(paste("Summary file not found:", summary_path))
+  }
   
   # Load and preprocess particle data
   particles_data <- read.csv(particles_path)
@@ -95,18 +106,18 @@ load_sample_data <- function(sample_number) {
   summary_data <- read.csv(summary_path)
   names(summary_data) <- make.names(names(summary_data))
   summary_data$Count <- as.numeric(gsub("[^0-9.]", "", summary_data$Count))
-  summary_data$width <- as.numeric(gsub("[^0-9.]", "", summary_data$width))
+  summary_data$width <- as.numeric(gsub("[^0-9.]", "", summary_data$finished_width))
   summary_data <- summary_data %>% drop_na()
   summary_data$Sample <- sample_number
   
   # Convert width from pixels to microns (calibration factor is 50/240)
-  summary_data$width <- summary_data$edge_width * (50/240)
+  summary_data$width <- summary_data$finished_width * (50/240)
   
   list(particles = particles_data, summary = summary_data)
 }
 
 # Load data for samples 51-60 (Trials 9-12, 5 samples each)
-edge_data <- map(c(01:30), load_sample_data)
+edge_data <- map(c(1:30), load_sample_data)
 
 # Combine all particle data into one dataset
 edge_particles_data <- bind_rows(map(edge_data, "particles"))
@@ -161,7 +172,8 @@ load_data <- function(condition) {
       summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Surfaces/%sTr%dSa%dSurf/Summary_%sTr%dSa%dSurf.csv", 
                             cond, trial_number, sample_number, cond, trial_number, sample_number)
       
-      summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
+      summary_data <- read_csv(summary_path) %>% 
+                             select(-c(7:16),-18)
       names(summary_data) <- make.names(names(summary_data))
       summary_data <- summary_data %>% 
         drop_na() %>%
@@ -236,7 +248,7 @@ load_calibration_data <- function(sample_number) {
   
   # Construct file paths
   particles_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Particles Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
-  summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s_updated.csv", sample_str, sample_str, sample_str, sample_str)
+  summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Calibration/Edge Measurements/Bef_%s minus Aft_%s/Summary Bef_%s minus Aft_%s.csv", sample_str, sample_str, sample_str, sample_str)
   
   # Load particle data
   particles_data <- read.csv(particles_path)
@@ -246,11 +258,11 @@ load_calibration_data <- function(sample_number) {
   summary_data <- read.csv(summary_path)
   names(summary_data) <- make.names(names(summary_data))
   summary_data$Count <- as.numeric(gsub("[^0-9.]", "", summary_data$Count))
-  summary_data$width <- as.numeric(gsub("[^0-9.]", "", summary_data$width))
+  summary_data$width <- as.numeric(gsub("[^0-9.]", "", summary_data$finished_width))
   summary_data$Sample <- sample_number
   summary_data <- summary_data %>% drop_na()
    # Convert width from pixels to microns (calibration factor is 50/240)
-  summary_data$width <- summary_data$edge_width * (50/240)
+  summary_data$width <- summary_data$finished_width * (50/240)
   
   list(particles = particles_data, summary = summary_data)
 }
@@ -295,7 +307,7 @@ load_data <- function(condition) {
       particle_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Cal_Surfaces/%sTr%dSa%dCwSurf/Particles_%sTr%dSa%dCwSurf.csv", 
                              cond, trial_number, sample_number, cond, trial_number, sample_number)
       
-      particle_data <- read_csv(particle_path)
+      particle_data <- read_csv(particle_path) 
       particle_data <- particle_data[, 2:(ncol(particle_data)-2)]
       particle_data$Sample <- sample_number
       particle_data$Trial <- trial_number
@@ -314,7 +326,8 @@ load_data <- function(condition) {
       summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Cal_Surfaces/%sTr%dSa%dCwSurf/Summary_%sTr%dSa%dCwSurf.csv", 
                             cond, trial_number, sample_number, cond, trial_number, sample_number)
       
-      summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
+      summary_data <- read_csv(summary_path) %>% 
+                             select(-c(7:16),-18)
       names(summary_data) <- make.names(names(summary_data))
       summary_data <- summary_data %>% 
         drop_na() %>%
@@ -409,7 +422,8 @@ load_data <- function(condition) {
       summary_path <- sprintf("/Volumes/BRANDONMEGA/Research/Dust_Contamination/Trials/Data/Witness/Witness_%s_%d/Summary_Witness_%s_%d.csv", 
                             cond, trial_number, cond, trial_number)
       
-      summary_data <- read_csv(summary_path, col_select = c(1, 2, 3, 5))
+      summary_data <- read_csv(summary_path) %>% 
+                             select(-c(7:16),-18)
       names(summary_data) <- make.names(names(summary_data))
       summary_data <- summary_data %>% 
         drop_na() %>%
@@ -500,7 +514,7 @@ new_sample_areas <- surface_before_data$summary_data %>%
   group_by(Sample, Trial, Cleaning_Method) %>%
   summarise(
     Total_Images = n(),
-    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
+    Total_Area = 0.1 / (n() * image_size * 1e-12),  # Convert to m^2
     .groups = "drop"
   )
 
@@ -511,25 +525,33 @@ get_area_counts <- function(data, area_thresholds, normalization_factor) {
   # Initialize counts vector
   counts <- numeric(length(area_thresholds))
   areas <- numeric(length(area_thresholds))
+  counts_nn <- numeric(length(area_thresholds))
+  areas_nn <- numeric(length(area_thresholds))
     
   # For bins except the last one
   for(i in 1:(length(area_thresholds) - 1)) {
     bin_particles <- data$Area >= area_thresholds[i] & data$Area < area_thresholds[i + 1]
+    counts_nn[i] <- sum(bin_particles)
     counts[i] <- sum(bin_particles) * normalization_factor
+    areas_nn[i] <- sum(data$Area[bin_particles])
     areas[i] <- sum(data$Area[bin_particles]) * normalization_factor
   }
   
   # For the last bin
     last_bin <- data$Area >= area_thresholds[length(area_thresholds)]
   counts[length(area_thresholds)] <- sum(last_bin) * normalization_factor
+  counts_nn[length(area_thresholds)] <- sum(last_bin)
   areas[length(area_thresholds)] <- sum(data$Area[last_bin]) * normalization_factor
+  areas_nn[length(area_thresholds)] <- sum(data$Area[last_bin])
 
   
   # Return results in the same format as expected by the original code
   tibble(
     Area = area_thresholds,
     Count = counts,
-    Scatter_Area = areas
+    Scatter_Area = areas,
+    Count_nn = counts_nn,
+    Scatter_Area_nn = areas_nn
   )
 }
 
@@ -540,14 +562,14 @@ get_area_counts <- function(data, area_thresholds, normalization_factor) {
 surface_before_counts <- surface_before_particles %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
-    norm_factor <- 0.1 /  new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
+    norm_factor <-new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
     get_area_counts(.x,area_thresholds, norm_factor)
   })
 
 surface_after_counts <- surface_after_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
-    norm_factor <- 0.1 /  new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
+    norm_factor <- new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample &  new_sample_areas$Trial == .y$Trial]
   get_area_counts(.x, area_thresholds, norm_factor)
   })
 
@@ -584,8 +606,8 @@ average_surface_cumulative <- cumulative_surface %>%
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Average_Count),
-         log_scatter = log10(Average_Scatter))
+         log_count = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_scatter = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter)))
 
 # Extract trial 12 data for later comparison
 surface_9 <- average_surface_cumulative %>% 
@@ -636,8 +658,8 @@ average_surface_binned <- binned_surface %>%
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count_bin = log10(Average_Count),
-         log_scatter_bin = log10(Average_Scatter))
+         log_count_bin = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_scatter_bin = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter)))
 
 
 
@@ -690,14 +712,13 @@ surface_average_air_binned <- bind_rows(surface_13_binned, surface_14_binned) %>
 ```{r edge_area_distribution_analysis}
 
 edge_particles_data <- edge_particles_data %>%
-  filter(Area > 1) %>% 
-  filter(Area < 6000)
+ filter(Area > 1, Area < 6000) 
 
 # Calculate normalization factors for edge measurements
 new_edge_factors<- edge_summary_data %>%
   group_by(Sample, Trial) %>%
   summarise(
-    Total_Width = sum(width)* 1e-6,  # Convert microns to meters
+    Total_Width = 0.01 / (sum(width)* 1e-6),  # Convert microns to meters
     .groups = "drop"
   )
 
@@ -705,7 +726,7 @@ new_edge_factors<- edge_summary_data %>%
 edge_counts <- edge_particles_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
-    norm_factor <-  0.1 / new_edge_factors$Total_Width[new_edge_factors$Sample == .y$Sample & new_edge_factors$Trial == .y$Trial]
+    norm_factor <-  new_edge_factors$Total_Width[new_edge_factors$Sample == .y$Sample & new_edge_factors$Trial == .y$Trial]
     get_area_counts(.x, area_thresholds, norm_factor)
   })
 
@@ -714,7 +735,9 @@ cumulative_edge <- edge_counts %>%
   group_by(Trial, Sample) %>%
   arrange(desc(Area)) %>%
   mutate(Cumulative_Count = cumsum(Count),
-         Cumulative_Scatter = rev(cumsum(rev(Scatter_Area)))) %>%
+         Cumulative_Scatter = rev(cumsum(rev(Scatter_Area))),
+         Cumulative_Count_nn = cumsum(Count_nn),
+         Cumulative_Scatter_nn = cumsum(Scatter_Area_nn)) %>%
   ungroup()
 
 # Calculate cumulative counts (particles larger than each threshold)
@@ -729,11 +752,15 @@ average_edge_cumulative <- cumulative_edge %>%
   summarize(
     Average_Count = mean(Cumulative_Count, na.rm = TRUE),
     Average_Scatter = mean(Cumulative_Scatter, na.rm = TRUE),
+    Average_Count_nn = mean(Cumulative_Count_nn, na.rm = TRUE),
+    Average_Scatter_nn = mean(Cumulative_Scatter_nn, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Average_Count),
-         log_scatter = log10(Average_Scatter)) %>% 
+         log_count = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_scatter = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter)),
+         log_count_nn = ifelse(Average_Count_nn == 0, -3, log10(Average_Count_nn)),
+         log_scatter_nn = ifelse(Average_Scatter_nn == 0, -3, log10(Average_Scatter_nn))) %>% 
   arrange(Trial, desc(Area)) 
 
 edge_9 <- average_edge_cumulative %>% 
@@ -780,12 +807,16 @@ average_edge_binned <- binned_edge %>%
   group_by(Trial, Area) %>%
   summarize(
     Average_Count = mean(Count, na.rm = TRUE),
+    Average_Count_nn = mean(Count_nn, na.rm = TRUE),
     Average_Scatter = mean(Scatter_Area, na.rm = TRUE),
+    Average_Scatter_nn = mean(Scatter_Area_nn, na.rm = TRUE),
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count_bin = log10(Average_Count),
-         log_scatter_bin = log10(Average_Scatter))
+         log_count_bin = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_count_bin_nn = ifelse(Average_Count_nn == 0, -3, log10(Average_Count_nn)),
+         log_scatter_bin = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter)),
+         log_scatter_bin_nn = ifelse(Average_Scatter_nn == 0, -3, log10(Average_Scatter_nn)))
 
 
 edge_9_binned <- average_edge_binned %>% 
@@ -836,14 +867,13 @@ edge_average_air_binned <- bind_rows(edge_13_binned, edge_14_binned) %>%
 ```{r calibration_wafer_analysis_edge}
 
 calibration_particles_data <- calibration_particles_data %>%
-  filter(Area > 1) %>% 
-  filter(Area < 6000)
+ filter(Area > 1, Area < 6000) 
 
 # Calculate normalization factors for edge measurements
 new_calibration_factors<- calibration_summary_data %>%
   group_by(Sample, Trial) %>%
   summarise(
-    Total_Width = sum(width)* 1e-6,  # Convert microns to meters
+    Total_Width = 0.01 / (sum(width)* 1e-6),  # Convert microns to meters
     .groups = "drop"
   )
 
@@ -863,7 +893,7 @@ cw_particles_data_edge <- calibration_particles_data %>%
 cw_edge_counts <- cw_particles_data_edge %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
-    norm_factor <-  0.1 / new_calibration_factors$Total_Width[new_calibration_factors$Sample == .y$Sample & new_calibration_factors$Trial == .y$Trial]
+    norm_factor <- new_calibration_factors$Total_Width[new_calibration_factors$Sample == .y$Sample & new_calibration_factors$Trial == .y$Trial]
     get_area_counts(.x, area_thresholds, norm_factor)
   })
 
@@ -890,10 +920,8 @@ cw_average_edge_cumulative <- cw_cumulative_edge %>%
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Average_Count),
-         log_scatter = log10(Average_Scatter),
-         log_count = ifelse(log_count < 0, 0, log_count),
-         log_scatter = ifelse(log_scatter < 0, 0, log_scatter)) %>% 
+         log_count = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_scatter = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter))) %>% 
   arrange(Trial, desc(Area)) 
 
 cw_edge_9 <- cw_average_edge_cumulative %>% 
@@ -944,10 +972,8 @@ cw_average_edge_binned <- cw_binned_edge %>%
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count_bin = log10(Average_Count),
-         log_scatter_bin = log10(Average_Scatter),
-         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin),
-         log_scatter_bin = ifelse(log_scatter_bin < 0, 0, log_scatter_bin))
+         log_count_bin = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_scatter_bin = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter)))
 
 
 cw_edge_9_binned <- cw_average_edge_binned %>% 
@@ -1008,7 +1034,7 @@ cw_new_sample_areas <- Cwsurface_before_data$summary_data %>%
   group_by(Sample, Trial, Cleaning_Method) %>%
   summarise(
     Total_Images = n(),
-    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
+    Total_Area = 0.1 / (n() * image_size * 1e-12),  # Convert to m^2
     .groups = "drop"
   )
 
@@ -1017,14 +1043,14 @@ cw_new_sample_areas <- Cwsurface_before_data$summary_data %>%
 cw_surface_before_counts <- Cwsurface_before_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
-    norm_factor <- 0.1 /  cw_new_sample_areas$Total_Area[cw_new_sample_areas$Sample == .y$Sample &  cw_new_sample_areas$Trial == .y$Trial]
+    norm_factor <-  cw_new_sample_areas$Total_Area[cw_new_sample_areas$Sample == .y$Sample &  cw_new_sample_areas$Trial == .y$Trial]
     get_area_counts(.x,area_thresholds, norm_factor)
   })
 
 cw_surface_after_counts <- Cwsurface_after_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
-    norm_factor <- 0.1 /  cw_new_sample_areas$Total_Area[cw_new_sample_areas$Sample == .y$Sample &  cw_new_sample_areas$Trial == .y$Trial]
+    norm_factor <-   cw_new_sample_areas$Total_Area[cw_new_sample_areas$Sample == .y$Sample &  cw_new_sample_areas$Trial == .y$Trial]
   get_area_counts(.x, area_thresholds, norm_factor)
   })
 
@@ -1061,10 +1087,8 @@ cw_average_surface_cumulative <- cw_cumulative_surface %>%
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Average_Count),
-         log_scatter = log10(Average_Scatter),
-         log_count = ifelse(log_count < 0, 0, log_count),
-         log_scatter = ifelse(log_scatter < 0, 0, log_scatter))
+         log_count = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_scatter = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter)))
 
 # Extract trial 12 data for later comparison
 cw_surface_9 <- cw_average_surface_cumulative %>% 
@@ -1115,10 +1139,8 @@ cw_average_surface_binned <- cw_binned_surface %>%
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count_bin = log10(Average_Count),
-         log_scatter_bin = log10(Average_Scatter),
-         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin),
-         log_scatter_bin = ifelse(log_scatter_bin < 0, 0, log_scatter_bin))
+         log_count_bin = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_scatter_bin = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter)))
 
 # Extract trials binned data for later comparison
 cw_surface_9_binned <- cw_average_surface_binned %>% 
@@ -1169,12 +1191,10 @@ cw_surface_average_air_binned <- bind_rows(cw_surface_13_binned, cw_surface_14_b
 ```{r wit_surface_area_distribution_analysis}
 # Filter surface particles by minimum area (1 )
 wit_surface_before_particles <- Witsurface_before_data$particle_data %>%
-  filter(Area > 1) %>% 
-  filter(Area < 6000)
+ filter(Area > 1, Area < 6000) 
 
 wit_surface_after_particles <- Witsurface_after_data$particle_data %>%
-  filter(Area > 1) %>% 
-  filter(Area < 6000)
+ filter(Area > 1, Area < 6000) 
 
 wit_combined_surface_data <- bind_rows(wit_surface_before_particles,wit_surface_after_particles)
 
@@ -1182,23 +1202,44 @@ wit_new_sample_areas <- Witsurface_before_data$summary_data %>%
   group_by(Trial, Cleaning_Method) %>%
   summarise(
     Total_Images = n(),
-    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
+    Total_Area = 0.1 / (n() * image_size * 1e-12),  # Convert to m^2
     .groups = "drop"
   )
 
 # Calculate area-based counts for before and after data
 # Normalizes each sample to 0.1 m² for standardized comparison
-wit_surface_before_counts <- wit_surface_before_particles %>%
+# Get all unique trials from your factors table and convert to character
+all_trials <- unique(wit_new_sample_areas$Trial)
+
+# Create results for all trials, handling empty data
+wit_surface_before_counts <- tibble(Trial = all_trials) %>%
   group_by(Trial) %>%
   group_modify(~ {
-    norm_factor <- 0.1 /  wit_new_sample_areas$Total_Area[wit_new_sample_areas$Trial == .y$Trial]
-    get_area_counts(.x,area_thresholds, norm_factor)
+    current_trial <- .y$Trial
+    
+    # Get the subset of data for this trial
+    trial_data <- wit_surface_before_particles %>% filter(Trial == current_trial)
+    
+    # Get normalization factor for this trial
+    norm_factor <-  wit_new_sample_areas$Total_Area[wit_new_sample_areas$Trial == current_trial]
+    
+    # If no data for this trial, create zero counts for all area thresholds
+    if (nrow(trial_data) == 0) {
+      tibble(
+        Area = area_thresholds,
+        Count = 0,
+        Scatter_Area = 0
+      )
+    } else {
+      # Process normally if data exists
+      get_area_counts(trial_data, area_thresholds, norm_factor)
+    }
   })
 
 wit_surface_after_counts <- Witsurface_after_data$particle_data %>%
   group_by(Trial) %>%
   group_modify(~ {
-    norm_factor <- 0.1 /  wit_new_sample_areas$Total_Area[wit_new_sample_areas$Trial == .y$Trial]
+    norm_factor <-  wit_new_sample_areas$Total_Area[wit_new_sample_areas$Trial == .y$Trial]
   get_area_counts(.x, area_thresholds, norm_factor)
   })
 
@@ -1235,10 +1276,8 @@ wit_average_surface_cumulative <- wit_cumulative_surface %>%
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Average_Count),
-         log_scatter = log10(Average_Scatter),
-         log_count = ifelse(log_count < 0, 0, log_count),
-         log_scatter = ifelse(log_scatter < 0, 0, log_scatter))
+         log_count = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_scatter = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter)))
 
 # Extract trial 12 data for later comparison
 wit_surface_9 <- wit_average_surface_cumulative %>% 
@@ -1289,10 +1328,8 @@ wit_average_surface_binned <- wit_binned_surface %>%
     .groups = "drop"
   ) %>%
   mutate(log_area = log10(Area),
-         log_count_bin = log10(Average_Count),
-         log_scatter_bin = log10(Average_Scatter),
-         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin),
-         log_scatter_bin = ifelse(log_scatter_bin < 0, 0, log_scatter_bin))
+         log_count_bin = ifelse(Average_Count == 0, -3, log10(Average_Count)),
+         log_scatter_bin = ifelse(Average_Scatter == 0, -3, log10(Average_Scatter)))
 
 # Extract trials binned data for later comparison
 wit_surface_9_binned <- wit_average_surface_binned %>% 
@@ -1340,75 +1377,22 @@ wit_surface_average_air_binned <- bind_rows(wit_surface_13_binned, wit_surface_1
 <!-- This section creates a model to predict edge contamination from surface contamination data -->
 
 ```{r edge_model_analysis}
-# Get sample areas for normalization
-new_sample_areas <- surface_before_data$summary_data %>%
-  group_by(Sample, Trial, Cleaning_Method) %>%
-  summarise(
-    Total_Images = n(),
-    Total_Area = n() * image_size * 1e-12,  # Convert to m^2
-    .groups = "drop"
-  )
 
-# New function to sum areas of particles within threshold bins
-# Not just counting particles but summing their areas
-get_area_sums <- function(data, area_thresholds, normalization_factor) {
-  # Initialize sums vector
-  areas <- numeric(length(area_thresholds))
-  counts <- numeric(length(area_thresholds))
-  
-  # For all bins except the last one
-  for(i in 1:(length(area_thresholds) - 1)) {
-    # Sum areas of particles that fall within this bin
-    bin_mask <- data$Area >= area_thresholds[i] & data$Area < area_thresholds[i + 1]
-    areas[i] <- sum(data$Area[bin_mask], na.rm = TRUE) * normalization_factor
-  }
-  
-  # Handle the last bin separately
-  last_bin_mask <- data$Area >= area_thresholds[length(area_thresholds)]
-  areas[length(area_thresholds)] <- sum(data$Area[last_bin_mask], na.rm = TRUE) * normalization_factor
-  
-  # Also calculate counts (similar to get_area_counts function)
-  for(i in 1:(length(area_thresholds) - 1)) {
-    counts[i] <- sum(data$Area >= area_thresholds[i] & 
-                    data$Area < area_thresholds[i + 1]) * normalization_factor
-  }
-  
-  # For the last bin
-  counts[length(area_thresholds)] <- sum(data$Area >= area_thresholds[length(area_thresholds)]) * normalization_factor
-  
-  # Return both counts and areas
-  tibble(
-    Area = area_thresholds,
-    Count = counts,
-    areas = areas
-  )
-}
 
 # Calculate model parameters using area summation for after contamination
 model_surface_after <- surface_after_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
-    norm_factor <- 0.1 / new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample & new_sample_areas$Trial == .y$Trial]
-    areas <- get_area_sums(.x, area_thresholds, norm_factor)
-    tibble(
-      Area = area_thresholds,
-      Total_Area = areas$areas,
-      Count = areas$Count,
-      norm_factor = norm_factor
-    )
+    norm_factor <- (new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample & new_sample_areas$Trial == .y$Trial])
+    areas <- get_area_counts(.x, area_thresholds, norm_factor)
   }) 
 
 # Calculate model parameters for before contamination
 model_surface_before <- surface_before_data$particle_data %>%
   group_by(Trial, Sample) %>%
   group_modify(~ {
-    norm_factor <- 0.1 / new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample & new_sample_areas$Trial == .y$Trial]
-    areas <- get_area_sums(.x, area_thresholds, norm_factor)
-    tibble(
-      Area = area_thresholds,
-      Total_Area = areas$areas,
-      Count = areas$Count
-    )
+    norm_factor <- new_sample_areas$Total_Area[new_sample_areas$Sample == .y$Sample & new_sample_areas$Trial == .y$Trial]
+    areas <- get_area_counts(.x, area_thresholds, norm_factor)
   }) 
 
 # Calculate differences to isolate contamination effect
@@ -1417,7 +1401,7 @@ model_surface_diff <- model_surface_after %>%
             by = c("Trial", "Sample", "Area"), 
             suffix = c("_After", "_Before")) %>%
   mutate(Count_Diff = Count_After - Count_Before,
-         Area_Diff = Total_Area_After - Total_Area_Before,
+         Area_Diff = Scatter_Area_After - Scatter_Area_Before,
          Positive_Diff_Count = pmax(Count_Diff, 0),
          Positive_Diff_Area = pmax(Area_Diff, 0))
 
@@ -1454,9 +1438,9 @@ model_average_edge_cumulative <- model_cumulative_counts %>%
     Average_Count = mean(Cumulative_Count, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  mutate(log_area = log10(Area) - log10(2),
+  mutate(log_area = log10(Area),
          log_count = log10(Average_Count),
-         log_count = ifelse(log_count < 0, 0, log_count))
+         log_count = ifelse(Average_Count == 0, -3, log10(Average_Count)))
 
 
 model_edge_9 <- model_average_edge_cumulative %>% 
@@ -1504,8 +1488,7 @@ model_average_edge_binned <- model_average_edge_cumulative %>%
     Count = c(Average_Count[1], diff(Average_Count))  # First value is the total, then differences
   ) %>%
   ungroup() %>% 
-  mutate(log_count_bin = log10(Count),
-         log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin))
+  mutate(log_count_bin = ifelse(Count == 0, -3, log10(Count)))
 
 model_edge_9_binned <- model_average_edge_binned %>% 
   filter( Trial == 9)
@@ -1553,24 +1536,46 @@ model_edge_average_air_binned <- bind_rows(model_edge_13_binned, model_edge_14_b
 ```{r Straight_Line_Model}
 ## 9. Edge Contamination Line Intersection Analysis
 # This section simulates drawing a line across surfaces and analyzes how particles intersect with it
-get_area_counts <- function(data, area_thresholds, normalization_factor) {
+get_overhang_area_counts <- function(data, area_thresholds, normalization_factor) {
+  # Check if data is empty
+  if (nrow(data) == 0 || !"overhang_area" %in% names(data)) {
+    # Return empty results with correct structure
+    return(tibble(
+      Area = area_thresholds,
+      Count = rep(0, length(area_thresholds)),
+      Scatter_Area = rep(0, length(area_thresholds))
+    ))
+  }
+  
+  # Check if overhang_area column has any non-NA values
+  if (all(is.na(data$overhang_area)) || length(data$overhang_area) == 0) {
+    return(tibble(
+      Area = area_thresholds,
+      Count = rep(0, length(area_thresholds)),
+      Scatter_Area = rep(0, length(area_thresholds))
+    ))
+  }
+  
   # Initialize counts vector
   counts <- numeric(length(area_thresholds))
   areas <- numeric(length(area_thresholds))
     
   # For bins except the last one
   for(i in 1:(length(area_thresholds) - 1)) {
-    
-     bin_particles <- data$overhang_area >= area_thresholds[i] & data$overhang_area < area_thresholds[i + 1]
-    counts[i] <- sum(bin_particles) * normalization_factor
-    areas[i] <- sum(data$overhang_area[bin_particles]) * normalization_factor
+    bin_particles <- data$overhang_area >= area_thresholds[i] & 
+                     data$overhang_area < area_thresholds[i + 1] &
+                     !is.na(data$overhang_area)
+    counts[i] <- sum(bin_particles, na.rm = TRUE) * normalization_factor
+    areas[i] <- sum(data$overhang_area[bin_particles], na.rm = TRUE) * normalization_factor
   }
   
   # For the last bin
-  last_bin <- data$overhang_area >= area_thresholds[length(area_thresholds)]
-  counts[length(area_thresholds)] <- sum(last_bin) * normalization_factor
-  areas[length(area_thresholds)] <- sum(data$overhang_area[last_bin]) * normalization_factor
-
+  if (length(area_thresholds) > 0) {
+    last_bin <- data$overhang_area >= area_thresholds[length(area_thresholds)] &
+                !is.na(data$overhang_area)
+    counts[length(area_thresholds)] <- sum(last_bin, na.rm = TRUE) * normalization_factor
+    areas[length(area_thresholds)] <- sum(data$overhang_area[last_bin], na.rm = TRUE) * normalization_factor
+  }
   
   # Return results in the same format as expected by the original code
   tibble(
@@ -1770,7 +1775,31 @@ particle_intersects_line <- function(particle, line_y) {
 }
 
 # Function to analyze intersections for a single line
+# Modified analyze_line_intersections function to handle empty datasets
 analyze_line_intersections <- function(particles_data, line_positions = NULL) {
+  # Check if dataset is empty
+  if (nrow(particles_data) == 0) {
+    cat("Warning: Empty dataset provided to analyze_line_intersections\n")
+    
+    # Return empty results structure
+    if (is.null(line_positions)) {
+      line_positions <- image_height / 2
+    }
+    
+    empty_results <- list()
+    for (i in 1:length(line_positions)) {
+      empty_results[[i]] <- list(
+        line_position = line_positions[i],
+        num_intersections = 0,
+        intersecting_particles = list(),
+        total_area = 0,
+        overhang_area = 0,
+        size_data = tibble(area = numeric(0), diameter = numeric(0), overhang_prop = numeric(0))
+      )
+    }
+    return(empty_results)
+  }
+  
   # If no specific positions provided, use middle of image
   if (is.null(line_positions)) {
     line_positions <- image_height / 2
@@ -1793,18 +1822,18 @@ analyze_line_intersections <- function(particles_data, line_positions = NULL) {
     
     # Calculate statistics for this line
     if (length(intersecting_particles) > 0) {
-    all_results[[i]] <- list(
-      line_position = line_y,
-      num_intersections = length(intersecting_particles),
-      intersecting_particles = intersecting_particles,
-      total_area = sum(sapply(intersecting_particles, function(x) x$area)),
-      overhang_area = sum(sapply(intersecting_particles, function(x) x$overhang_area)),
-      size_data = tibble(
+      all_results[[i]] <- list(
+        line_position = line_y,
+        num_intersections = length(intersecting_particles),
+        intersecting_particles = intersecting_particles,
+        total_area = sum(sapply(intersecting_particles, function(x) x$area)),
+        overhang_area = sum(sapply(intersecting_particles, function(x) x$overhang_area)),
+        size_data = tibble(
           area = sapply(intersecting_particles, function(x) x$area),
           diameter = sapply(intersecting_particles, function(x) x$diameter),
           overhang_prop = sapply(intersecting_particles, function(x) x$overhang_proportion)
         )
-    )
+      )
     } else {
       all_results[[i]] <- list(
         line_position = line_y,
@@ -1820,6 +1849,30 @@ analyze_line_intersections <- function(particles_data, line_positions = NULL) {
   return(all_results)
 }
 
+# Function to check dataset sizes before analysis
+check_dataset_sizes <- function() {
+  datasets <- list(
+    "witness_surface_before9" = witness_surface_before9,
+    "witness_surface_before10" = witness_surface_before10,
+    "witness_surface_before11" = witness_surface_before11,
+    "witness_surface_before12" = witness_surface_before12,
+    "witness_surface_before13" = witness_surface_before13,
+    "witness_surface_before14" = witness_surface_before14,
+    "witness_surface_after9" = witness_surface_after9,
+    "witness_surface_after10" = witness_surface_after10,
+    "witness_surface_after11" = witness_surface_after11,
+    "witness_surface_after12" = witness_surface_after12,
+    "witness_surface_after13" = witness_surface_after13,
+    "witness_surface_after14" = witness_surface_after14
+  )
+  
+  for (name in names(datasets)) {
+    cat(sprintf("%s: %d observations\n", name, nrow(datasets[[name]])))
+  }
+}
+
+# Run the check
+check_dataset_sizes()
 # Use the middle of the image for the edge simulation line
 central_line_y <- image_height / 2
 
@@ -2679,7 +2732,7 @@ c_bmodel_edge_after <- rbind(calibration_sim_after12,calibration_sim_after13,cal
 new_SSLSM_edge_factors<- surface_before_data$summary_data %>%
   group_by(Trial) %>%
   summarise(
-    Total_Width = n() * 600 * 1e-6,  # Convert microns to meters
+    Total_Width = 0.1 / (n() * 600 * 1e-6),  # Convert microns to meters
     .groups = "drop"
   )
 
@@ -2687,15 +2740,15 @@ new_SSLSM_edge_factors<- surface_before_data$summary_data %>%
 SSLSM_edge_counts_before <- s_bmodel_edge_before %>%
   group_by(Trial) %>%
   group_modify(~ {
-    norm_factor <-  0.1 / new_SSLSM_edge_factors$Total_Width[new_SSLSM_edge_factors$Trial == .y$Trial]
-  get_area_counts(.x, area_thresholds, norm_factor)
+    norm_factor <- new_SSLSM_edge_factors$Total_Width[new_SSLSM_edge_factors$Trial == .y$Trial]
+  get_overhang_area_counts(.x, area_thresholds, norm_factor)
   })
 
 SSLSM_edge_counts_after <- s_bmodel_edge_after %>%
   group_by(Trial) %>%
   group_modify(~ {
-    norm_factor <-  0.1 / new_SSLSM_edge_factors$Total_Width[new_SSLSM_edge_factors$Trial == .y$Trial]
-  get_area_counts(.x, area_thresholds, norm_factor)
+    norm_factor <- new_SSLSM_edge_factors$Total_Width[new_SSLSM_edge_factors$Trial == .y$Trial]
+  get_overhang_area_counts(.x, area_thresholds, norm_factor)
   })
 
 SSLSM_surface_count_diff <- SSLSM_edge_counts_after %>%
@@ -2716,11 +2769,8 @@ SSLSM_cumulative_edge_counts <- SSLSM_surface_count_diff %>%
          Cumulative_Scatter = rev(cumsum(rev(Positive_Scatter)))) %>%
   ungroup() %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Cumulative_Count),
-         log_count = ifelse(log_count < 0, 0, log_count),
-         log_scatter = log10(Cumulative_Scatter),
-         log_scatter = ifelse(log_scatter < 0, 0, log_scatter)
-         ) %>% 
+         log_count = ifelse(Cumulative_Count == 0, -3, log10(Cumulative_Count)),
+         log_scatter = ifelse(Cumulative_Scatter == 0, -3, log10(Cumulative_Scatter))) %>% 
   arrange(Trial, desc(Area)) 
 
 
@@ -2774,10 +2824,8 @@ SSLSM_edge_binned <- SSLSM_cumulative_edge_counts %>%
     Scatter = c(Cumulative_Scatter[length(Cumulative_Scatter)], -diff(Cumulative_Scatter))
   ) %>%
   ungroup() %>% 
-  mutate(log_count_bin = log10(Count),
-          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin),
-         log_scatter_bin = log10(Scatter),
-          log_scatter_bin = ifelse(log_scatter_bin < 0, 0, log_scatter_bin)
+  mutate(log_count_bin = ifelse(Count == 0, -3, log10(Count)),
+         log_scatter_bin = ifelse(Scatter == 0, -3, log10(Scatter))
          )
 
 SSLSM_edge_9_binned <- SSLSM_edge_binned %>% 
@@ -2836,14 +2884,14 @@ CSLSM_edge_counts_before <- c_bmodel_edge_before %>%
   group_by(Trial) %>%
   group_modify(~ {
     norm_factor <-  0.1 / new_CSLSM_edge_factors$Total_Width[new_CSLSM_edge_factors$Trial == .y$Trial]
-  get_area_counts(.x, area_thresholds, norm_factor)
+  get_overhang_area_counts(.x, area_thresholds, norm_factor)
   })
 
 CSLSM_edge_counts_after <- c_bmodel_edge_after %>%
   group_by(Trial) %>%
   group_modify(~ {
     norm_factor <-  0.1 / new_CSLSM_edge_factors$Total_Width[new_CSLSM_edge_factors$Trial == .y$Trial]
-  get_area_counts(.x, area_thresholds, norm_factor)
+  get_overhang_area_counts(.x, area_thresholds, norm_factor)
   })
 
 CSLSM_surface_count_diff <- CSLSM_edge_counts_after %>%
@@ -2864,11 +2912,8 @@ CSLSM_cumulative_edge_counts <- CSLSM_surface_count_diff %>%
          Cumulative_Scatter = rev(cumsum(rev(Positive_Scatter)))) %>%
   ungroup() %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Cumulative_Count),
-         log_count = ifelse(log_count < 0, 0, log_count),
-         log_scatter = log10(Cumulative_Scatter),
-         log_scatter = ifelse(log_scatter < 0, 0, log_scatter)
-         ) %>% 
+         log_count = ifelse(Cumulative_Count == 0, -3, log10(Cumulative_Count)),
+         log_scatter = ifelse(Cumulative_Scatter == 0, -3, log10(Cumulative_Scatter))) %>% 
   arrange(Trial, desc(Area)) 
 
 
@@ -2922,10 +2967,8 @@ CSLSM_edge_binned <- CSLSM_cumulative_edge_counts %>%
     Scatter = c(Cumulative_Scatter[length(Cumulative_Scatter)], -diff(Cumulative_Scatter))
   ) %>%
   ungroup() %>% 
-  mutate(log_count_bin = log10(Count),
-          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin),
-         log_scatter_bin = log10(Scatter),
-          log_scatter_bin = ifelse(log_scatter_bin < 0, 0, log_scatter_bin)
+  mutate(log_count_bin = ifelse(Count == 0, -3, log10(Count)),
+         log_scatter_bin = ifelse(Scatter == 0, -3, log10(Scatter))
          )
 
 CSLSM_edge_9_binned <- CSLSM_edge_binned %>% 
@@ -2982,18 +3025,37 @@ new_WSLSM_edge_factors<- Witsurface_before_data$summary_data %>%
   )
 
 # Calculate area-based counts for edge data using the same function as surface data
-WSLSM_edge_counts_before <- w_bmodel_edge_before %>%
+# Get all unique trials from your factors table
+all_trials <- as.character(unique(new_WSLSM_edge_factors$Trial))
+
+# Create results for all trials, handling empty data
+WSLSM_edge_counts_before <- tibble(Trial = all_trials) %>%
   group_by(Trial) %>%
   group_modify(~ {
-    norm_factor <-  0.1 / new_WSLSM_edge_factors$Total_Width[new_WSLSM_edge_factors$Trial == .y$Trial]
-  get_area_counts(.x, area_thresholds, norm_factor)
+    # Get the subset of data for this trial
+    trial_data <- w_bmodel_edge_before %>% filter(Trial == .y$Trial)
+    
+    # Get normalization factor for this trial
+    norm_factor <- 0.1 / new_WSLSM_edge_factors$Total_Width[new_WSLSM_edge_factors$Trial == .y$Trial]
+    
+    # If no data for this trial, create zero counts for all area thresholds
+    if (nrow(trial_data) == 0) {
+      tibble(
+        Area = area_thresholds,
+        Count = 0,
+        Scatter_Area = 0
+      )
+    } else {
+      # Process normally if data exists
+      get_overhang_area_counts(trial_data, area_thresholds, norm_factor)
+    }
   })
 
 WSLSM_edge_counts_after <- w_bmodel_edge_after %>%
   group_by(Trial) %>%
   group_modify(~ {
     norm_factor <-  0.1 / new_WSLSM_edge_factors$Total_Width[new_WSLSM_edge_factors$Trial == .y$Trial]
-  get_area_counts(.x, area_thresholds, norm_factor)
+  get_overhang_area_counts(.x, area_thresholds, norm_factor)
   })
 
 WSLSM_surface_count_diff <- WSLSM_edge_counts_after %>%
@@ -3014,11 +3076,8 @@ WSLSM_cumulative_edge_counts <- WSLSM_surface_count_diff %>%
          Cumulative_Scatter = rev(cumsum(rev(Positive_Scatter)))) %>%
   ungroup() %>%
   mutate(log_area = log10(Area),
-         log_count = log10(Cumulative_Count),
-         log_count = ifelse(log_count < 0, 0, log_count),
-         log_scatter = log10(Cumulative_Scatter),
-         log_scatter = ifelse(log_scatter < 0, 0, log_scatter)
-         ) %>% 
+         log_count = ifelse(Cumulative_Count == 0, -3, log10(Cumulative_Count)),
+         log_scatter = ifelse(Cumulative_Scatter == 0, -3, log10(Cumulative_Scatter))) %>% 
   arrange(Trial, desc(Area)) 
 
 
@@ -3072,10 +3131,8 @@ WSLSM_edge_binned <- WSLSM_cumulative_edge_counts %>%
     Scatter = c(Cumulative_Scatter[length(Cumulative_Scatter)], -diff(Cumulative_Scatter))
   ) %>%
   ungroup() %>% 
-  mutate(log_count_bin = log10(Count),
-          log_count_bin = ifelse(log_count_bin < 0, 0, log_count_bin),
-         log_scatter_bin = log10(Scatter),
-          log_scatter_bin = ifelse(log_scatter_bin < 0, 0, log_scatter_bin)
+  mutate(log_count_bin = ifelse(Count == 0, -3, log10(Count)),
+         log_scatter_bin = ifelse(Scatter == 0, -3, log10(Scatter))
          )
 
 WSLSM_edge_9_binned <- WSLSM_edge_binned %>% 
@@ -3119,6 +3176,760 @@ WSLSM_edge_average_air_binned <- bind_rows(WSLSM_edge_13_binned, WSLSM_edge_14_b
     .groups = "drop"
   )
 ```
+
+##7.5 
+
+```{r}
+# ========================================================================
+# BRIGHTNESS ANALYSIS SECTION
+# ========================================================================
+# This section analyzes image brightness patterns across all surface and edge data types:
+# Surfaces: Starshade, Calibration, Witness
+# Edges: Starshade, Calibration
+
+## Load required libraries for brightness analysis
+if (!require(reshape2)) install.packages("reshape2")
+library(reshape2)
+
+# ========================================================================
+# BRIGHTNESS ANALYSIS FUNCTIONS
+# ========================================================================
+
+#' Analyze surface brightness data for all surface types
+analyze_all_surface_brightness <- function() {
+  
+  cat("=== SURFACE BRIGHTNESS ANALYSIS ===\n")
+  
+  # List of surface data objects to analyze
+  surface_datasets <- list(
+    "Starshade Surface Before" = if(exists("surface_before_data") && !is.null(surface_before_data$summary_data)) surface_before_data$summary_data else NULL,
+    "Starshade Surface After" = if(exists("surface_after_data") && !is.null(surface_after_data$summary_data)) surface_after_data$summary_data else NULL,
+    "Calibration Surface Before" = if(exists("Cwsurface_before_data") && !is.null(Cwsurface_before_data$summary_data)) Cwsurface_before_data$summary_data else NULL,
+    "Calibration Surface After" = if(exists("Cwsurface_after_data") && !is.null(Cwsurface_after_data$summary_data)) Cwsurface_after_data$summary_data else NULL,
+    "Witness Surface Before" = if(exists("Witsurface_before_data") && !is.null(Witsurface_before_data$summary_data)) Witsurface_before_data$summary_data else NULL,
+    "Witness Surface After" = if(exists("Witsurface_after_data") && !is.null(Witsurface_after_data$summary_data)) Witsurface_after_data$summary_data else NULL
+  )
+  
+  # Remove NULL datasets and report which are available
+  available_datasets <- names(surface_datasets)[!sapply(surface_datasets, is.null)]
+  surface_datasets <- surface_datasets[!sapply(surface_datasets, is.null)]
+  
+  cat("Available surface datasets:", paste(available_datasets, collapse = ", "), "\n")
+  
+  if(length(surface_datasets) == 0) {
+    cat("WARNING: No surface summary datasets found.\n")
+    cat("Expected datasets: surface_before_data$summary_data, surface_after_data$summary_data, \n")
+    cat("                  Cwsurface_before_data$summary_data, Cwsurface_after_data$summary_data, \n")
+    cat("                  Witsurface_before_data$summary_data, Witsurface_after_data$summary_data\n")
+    return(NULL)
+  }
+  
+  # Process each surface dataset
+  surface_brightness_results <- list()
+  
+  for(dataset_name in names(surface_datasets)) {
+    data <- surface_datasets[[dataset_name]]
+    
+    cat("Processing", dataset_name, "- Total images:", nrow(data), "\n")
+    
+    # Extract surface type and timing
+    surface_type <- case_when(
+      grepl("Starshade", dataset_name) ~ "Starshade",
+      grepl("Calibration", dataset_name) ~ "Calibration",
+      grepl("Witness", dataset_name) ~ "Witness",
+      TRUE ~ "Unknown"
+    )
+    
+    timing <- case_when(
+      grepl("Before", dataset_name) ~ "Before",
+      grepl("After", dataset_name) ~ "After",
+      TRUE ~ "Unknown"
+    )
+    
+    # Clean and process brightness data
+    processed_data <- data %>%
+      mutate(
+        # Handle missing brightness values
+        Post_Transform_Median_Brightness = ifelse(is.na(Post_Transform_Median_Brightness) | 
+                                                 Post_Transform_Median_Brightness == 0, 
+                                                 Original_Median_Brightness, 
+                                                 Post_Transform_Median_Brightness),
+        # Calculate brightness metrics
+        Brightness_Change = Post_Transform_Median_Brightness - Original_Median_Brightness,
+        Brightness_Change_Percent = ifelse(Original_Median_Brightness != 0,
+                                          (Brightness_Change / Original_Median_Brightness) * 100,
+                                          0),
+        # Add identifiers
+        Surface_Type = surface_type,
+        Timing = timing,
+        Dataset = dataset_name,
+        Transform_Applied = ifelse(Transformation_Applied == "Yes", "Transformed", "Not Transformed"),
+        # Extract trial numbers from image names
+        Trial = str_extract(Slice, "\\d+$")
+      )
+    
+    surface_brightness_results[[dataset_name]] <- processed_data
+  }
+  
+  # Combine all surface data
+  combined_surface_data <- bind_rows(surface_brightness_results)
+  
+  cat("Total surface images analyzed:", nrow(combined_surface_data), "\n")
+  cat("Images with transformation applied:", 
+      sum(combined_surface_data$Transform_Applied == "Transformed", na.rm = TRUE), "\n")
+  
+  # Summary by surface type and timing
+  surface_counts <- combined_surface_data %>%
+    group_by(Surface_Type, Timing) %>%
+    summarise(
+      Total_Images = n(),
+      Transformed_Images = sum(Transform_Applied == "Transformed", na.rm = TRUE),
+      .groups = "drop"
+    )
+  print(surface_counts)
+  cat("\n")
+  
+  return(combined_surface_data)
+}
+
+#' Analyze edge brightness data for edge types
+analyze_all_edge_brightness <- function() {
+  
+  cat("=== EDGE BRIGHTNESS ANALYSIS ===\n")
+  
+  # List of edge data objects to analyze
+  edge_datasets <- list(
+    "Starshade Edge" = if(exists("edge_summary_data")) edge_summary_data else NULL,
+    "Calibration Edge" = if(exists("calibration_summary_data")) calibration_summary_data else NULL
+  )
+  
+  # Remove NULL datasets and report which are available
+  available_datasets <- names(edge_datasets)[!sapply(edge_datasets, is.null)]
+  edge_datasets <- edge_datasets[!sapply(edge_datasets, is.null)]
+  
+  cat("Available edge datasets:", paste(available_datasets, collapse = ", "), "\n")
+  
+  if(length(edge_datasets) == 0) {
+    cat("WARNING: No edge summary datasets found.\n")
+    cat("Expected datasets: edge_summary_data, calibration_summary_data\n")
+    return(NULL)
+  }
+  
+  # Process each edge dataset
+  edge_brightness_results <- list()
+  
+  for(dataset_name in names(edge_datasets)) {
+    data <- edge_datasets[[dataset_name]]
+    
+    cat("Processing", dataset_name, "- Total samples:", nrow(data), "\n")
+    
+    # Extract edge type
+    edge_type <- case_when(
+      grepl("Starshade", dataset_name) ~ "Starshade",
+      grepl("Calibration", dataset_name) ~ "Calibration",
+      TRUE ~ "Unknown"
+    )
+    
+    # Process edge brightness data
+    processed_data <- data %>%
+      mutate(
+        Edge_Type = edge_type,
+        Dataset = dataset_name,
+        Sample_ID = row_number()
+      )
+    
+    # Try to extract trial numbers from various possible columns
+    trial_column <- NULL
+    if("Result of C1-Fused" %in% names(data)) {
+      trial_column <- "Result of C1-Fused"
+    } else if("image_name" %in% names(data)) {
+      trial_column <- "image_name"
+    } else if("Slice" %in% names(data)) {
+      trial_column <- "Slice"
+    } else {
+      # Use first column that contains image/file names
+      text_cols <- sapply(data, function(x) is.character(x) && any(grepl("\\d", x)))
+      if(any(text_cols)) {
+        trial_column <- names(data)[which(text_cols)[1]]
+      }
+    }
+    
+    if(!is.null(trial_column)) {
+      processed_data <- processed_data %>%
+        mutate(Trial = str_extract(.data[[trial_column]], "\\d+$"))
+      cat("Extracting trial numbers from column:", trial_column, "\n")
+    } else {
+      processed_data <- processed_data %>%
+        mutate(Trial = as.character(Sample_ID))
+      cat("WARNING: Could not find appropriate column for trial extraction. Using Sample_ID.\n")
+    }
+    
+    # Check which brightness columns are available
+    brightness_cols <- names(data)[grepl("Median", names(data))]
+    cat("Available brightness columns:", paste(brightness_cols, collapse = ", "), "\n")
+    
+    if(length(brightness_cols) == 0) {
+      cat("WARNING: No brightness columns found in", dataset_name, ". Skipping this dataset.\n")
+      return(NULL)
+    }
+    
+    # Select brightness measurements (use available columns)
+    standard_brightness_cols <- c(
+      "Bef_Pre_Upper_Median", "Bef_Pre_Lower_Median", "Bef_Pre_Entire_Median",
+      "Bef_Post_Upper_Median", "Bef_Post_Lower_Median", "Bef_Post_Entire_Median",
+      "Aft_Pre_Upper_Median", "Aft_Pre_Lower_Median", "Aft_Pre_Entire_Median",
+      "Aft_Post_Upper_Median", "Aft_Post_Lower_Median", "Aft_Post_Entire_Median"
+    )
+    
+    # Use only columns that actually exist
+    available_brightness_cols <- intersect(standard_brightness_cols, names(processed_data))
+    
+    if(length(available_brightness_cols) == 0) {
+      cat("WARNING: No standard brightness columns found in", dataset_name, ". Available columns:\n")
+      print(names(data))
+      cat("Skipping this dataset.\n")
+      return(NULL)
+    }
+    
+    cat("Using brightness columns:", paste(available_brightness_cols, collapse = ", "), "\n")
+    
+    processed_data <- processed_data %>%
+      select(Sample_ID, Trial, Edge_Type, Dataset, all_of(available_brightness_cols)) %>%
+      # Reshape to long format
+      pivot_longer(cols = all_of(available_brightness_cols), 
+                   names_to = "Measurement_Type", 
+                   values_to = "Brightness") %>%
+      # Parse measurement components
+      separate(Measurement_Type, into = c("Contamination", "Processing", "Region"), sep = "_") %>%
+      mutate(
+        Contamination = case_when(
+          Contamination == "Bef" ~ "Before Contamination",
+          Contamination == "Aft" ~ "After Contamination",
+          TRUE ~ Contamination
+        ),
+        Processing = case_when(
+          Processing == "Pre" ~ "Before Processing", 
+          Processing == "Post" ~ "After Processing",
+          TRUE ~ Processing
+        ),
+        Region = case_when(
+          Region == "Upper" ~ "Upper",
+          Region == "Lower" ~ "Lower", 
+          Region == "Entire" ~ "Entire",
+          TRUE ~ Region
+        )
+      )
+    
+    edge_brightness_results[[dataset_name]] <- processed_data
+  }
+  
+  # Combine all edge data
+  combined_edge_data <- bind_rows(edge_brightness_results)
+  
+  cat("Total edge measurements analyzed:", nrow(combined_edge_data), "\n")
+  
+  # Summary by edge type
+  edge_counts <- combined_edge_data %>%
+    group_by(Edge_Type) %>%
+    summarise(
+      Total_Samples = n_distinct(Sample_ID),
+      Total_Measurements = n(),
+      .groups = "drop"
+    )
+  print(edge_counts)
+  cat("\n")
+  
+  return(combined_edge_data)
+}
+
+# ========================================================================
+# BRIGHTNESS VISUALIZATION FUNCTIONS
+# ========================================================================
+
+#' Create surface brightness plots
+create_surface_brightness_plots <- function(surface_data) {
+  
+  if(is.null(surface_data) || nrow(surface_data) == 0) {
+    cat("No surface data available for plotting.\n")
+    return(NULL)
+  }
+  
+  # Surface brightness distribution by type (histogram remains the same)
+  p1 <- ggplot(surface_data) +
+    geom_histogram(aes(x = Original_Median_Brightness, fill = "Original"), 
+                   alpha = 0.7, bins = 70, position = "identity") +
+    geom_histogram(aes(x = Post_Transform_Median_Brightness, fill = "Post-Transform"), 
+                   alpha = 0.7, bins = 70, position = "identity") +
+    facet_wrap(~ Surface_Type + Timing, scales = "free_y", ncol = 3) +
+    labs(title = "Surface Image Brightness Distribution by Surface Type and Timing",
+         subtitle = "Original vs Post-Transform Brightness",
+         x = "Median Brightness Value", y = "Number of Images",
+         fill = "Measurement") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold")) +
+    scale_fill_manual(values = c("Original" = "steelblue", "Post-Transform" = "coral"))
+  
+  # Brightness change by transformation status - HISTOGRAM DISTRIBUTION
+  p2 <- ggplot(surface_data, aes(x = Brightness_Change_Percent)) +
+    geom_histogram(aes(fill = Surface_Type), bins = 70, alpha = 0.7, position = "identity") +
+    facet_wrap(~ Timing, scales = "free_y") +
+    xlim(-50, 50) +  # Limit x-axis for better readability
+    labs(title = "Distribution of Surface Brightness Changes",
+         subtitle = "Count of images by brightness change percentage",
+         x = "Brightness Change (%)", y = "Count of Images",
+         fill = "Surface Type") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold")) +
+    scale_fill_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral", "Witness" = "darkgreen")) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "red", alpha = 0.7)
+  
+  # Before vs after transformation scatter (keep as scatter)
+  p3 <- ggplot(surface_data, aes(x = Original_Median_Brightness, y = Post_Transform_Median_Brightness)) +
+    geom_point(aes(color = Surface_Type), size = 1.5, alpha = 0.6) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+    facet_wrap(~ Timing, scales = "free") +
+    labs(title = "Surface Brightness: Before vs After Processing by Timing",
+         subtitle = "Diagonal line represents no change",
+         x = "Original Brightness", y = "Post-Transform Brightness",
+         color = "Surface Type") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold")) +
+    scale_color_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral", "Witness" = "darkgreen"))
+  
+  # Brightness variability comparison - HISTOGRAM DISTRIBUTION
+  brightness_long <- surface_data %>%
+    select(Surface_Type, Timing, Original_Median_Brightness, Post_Transform_Median_Brightness) %>%
+    pivot_longer(cols = c(Original_Median_Brightness, Post_Transform_Median_Brightness),
+                 names_to = "Measurement_Stage", values_to = "Brightness") %>%
+    mutate(Measurement_Stage = ifelse(Measurement_Stage == "Original_Median_Brightness", 
+                                     "Original", "Post-Transform"))
+  
+  p4 <- ggplot(brightness_long, aes(x = Brightness)) +
+    geom_histogram(aes(fill = Surface_Type), bins = 70, alpha = 0.7, position = "identity") +
+    facet_grid(Measurement_Stage ~ Timing, scales = "free") +
+    coord_cartesian(xlim = c(0, quantile(brightness_long$Brightness, 0.99, na.rm = TRUE))) +  # Limit to 99th percentile
+    labs(title = "Distribution of Surface Brightness Values by Processing Stage",
+         subtitle = "Count of images by brightness value",
+         x = "Brightness Value", y = "Count of Images",
+         fill = "Surface Type") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold")) +
+    scale_fill_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral", "Witness" = "darkgreen"))
+  
+  # Processing effect distribution for surfaces - NEW PLOT
+  surface_processing_effect <- surface_data %>%
+    mutate(Processing_Effect = Post_Transform_Median_Brightness - Original_Median_Brightness)
+  
+  p5 <- ggplot(surface_processing_effect, aes(x = Processing_Effect)) +
+    geom_histogram(aes(fill = Surface_Type), bins = 70, alpha = 0.7, position = "identity") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "red", alpha = 0.7, size = 1) +
+    facet_wrap(~ Timing, scales = "free_y") +
+    xlim(-100, 100) +  # Limit x-axis for better readability
+    labs(title = "Distribution of Surface Brightness Changes Due to Processing",
+         subtitle = "Count of images by brightness change (negative = darker after processing/normalization)",
+         x = "Brightness Change (Post-Transform - Original)", y = "Count of Images",
+         fill = "Surface Type") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold")) +
+    scale_fill_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral", "Witness" = "darkgreen"))
+  
+  # Timing effect distribution for surfaces - NEW PLOT
+  # Check if we have both Before and After timing data
+  timing_check <- surface_data %>%
+    group_by(Timing) %>%
+    summarise(count = n(), .groups = "drop")
+  
+  if("Before" %in% timing_check$Timing && "After" %in% timing_check$Timing) {
+    
+    # First, let's see what we're working with
+    cat("Attempting timing effect analysis...\n")
+    
+    timing_wide <- surface_data %>%
+      select(Surface_Type, Timing, Original_Median_Brightness, Post_Transform_Median_Brightness, Trial) %>%
+      # Ensure we have matching trials for before/after comparison
+      group_by(Surface_Type, Trial) %>%
+      filter(n() == 2) %>%  # Only keep trials that have both Before and After
+      ungroup() %>%
+      pivot_wider(names_from = Timing, 
+                  values_from = c(Original_Median_Brightness, Post_Transform_Median_Brightness),
+                  values_fn = mean)  # In case of duplicates, take mean
+    
+    # Check what columns were actually created
+    cat("Columns created after pivot_wider:", paste(names(timing_wide), collapse = ", "), "\n")
+    
+    # Check if the expected columns exist
+    expected_cols <- c("Original_Median_Brightness_Before", "Original_Median_Brightness_After",
+                      "Post_Transform_Median_Brightness_Before", "Post_Transform_Median_Brightness_After")
+    
+    existing_cols <- intersect(expected_cols, names(timing_wide))
+    cat("Expected columns found:", paste(existing_cols, collapse = ", "), "\n")
+    
+    if(length(existing_cols) >= 2) {
+      # Only proceed if we have at least some of the expected columns
+      surface_timing_effect <- timing_wide %>%
+        # Create timing effects only for columns that exist
+        {
+          result <- .
+          if("Original_Median_Brightness_Before" %in% names(.) && "Original_Median_Brightness_After" %in% names(.)) {
+            result <- result %>%
+              mutate(Original_Timing_Effect = as.numeric(`Original_Median_Brightness_After`) - as.numeric(`Original_Median_Brightness_Before`))
+          }
+          if("Post_Transform_Median_Brightness_Before" %in% names(.) && "Post_Transform_Median_Brightness_After" %in% names(.)) {
+            result <- result %>%
+              mutate(PostTransform_Timing_Effect = as.numeric(`Post_Transform_Median_Brightness_After`) - as.numeric(`Post_Transform_Median_Brightness_Before`))
+          }
+          result
+        } %>%
+        # Select only the timing effect columns that were created
+        select(Surface_Type, Trial, ends_with("_Timing_Effect")) %>%
+        pivot_longer(cols = ends_with("_Timing_Effect"),
+                     names_to = "Processing_Stage", values_to = "Timing_Effect") %>%
+        mutate(Processing_Stage = case_when(
+          Processing_Stage == "Original_Timing_Effect" ~ "Original",
+          Processing_Stage == "PostTransform_Timing_Effect" ~ "Post-Transform",
+          TRUE ~ Processing_Stage
+        )) %>%
+        filter(!is.na(Timing_Effect) & is.finite(Timing_Effect))
+      
+      if(nrow(surface_timing_effect) > 0) {
+        p6 <- ggplot(surface_timing_effect, aes(x = Timing_Effect)) +
+          geom_histogram(aes(fill = Surface_Type), bins = 50, alpha = 0.7, position = "identity") +
+          geom_vline(xintercept = 0, linetype = "dashed", color = "red", alpha = 0.7, size = 1) +
+          facet_wrap(~ Processing_Stage, scales = "free") +
+          xlim(-50, 50) +  # Limit x-axis for better readability
+          labs(title = "Distribution of Surface Brightness Changes Due to Timing",
+               subtitle = "Count of images by brightness change (After - Before contamination)",
+               x = "Brightness Change (After - Before Contamination)", y = "Count of Images",
+               fill = "Surface Type") +
+          theme_minimal() +
+          theme(plot.title = element_text(size = 14, face = "bold")) +
+          scale_fill_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral", "Witness" = "darkgreen"))
+        
+        cat("Timing effect plot created with", nrow(surface_timing_effect), "paired observations.\n")
+      } else {
+        p6 <- NULL
+        cat("No valid timing effect data after processing.\n")
+      }
+    } else {
+      p6 <- NULL
+      cat("Could not find expected columns for timing effect analysis.\n")
+      cat("Available columns:", paste(names(timing_wide), collapse = ", "), "\n")
+    }
+  } else {
+    p6 <- NULL
+    cat("Both Before and After timing data required for timing effect analysis.\n")
+    cat("Available timing groups:", paste(timing_check$Timing, collapse = ", "), "\n")
+  }
+  
+  # Complete condition comparison for surfaces - NEW PLOT
+  surface_comparison_data <- surface_data %>%
+    select(Surface_Type, Timing, Original_Median_Brightness, Post_Transform_Median_Brightness) %>%
+    pivot_longer(cols = c(Original_Median_Brightness, Post_Transform_Median_Brightness),
+                 names_to = "Processing_Stage", values_to = "Brightness") %>%
+    mutate(Processing_Stage = ifelse(Processing_Stage == "Original_Median_Brightness", "Original", "Post-Transform"))
+  
+  p7 <- ggplot(surface_comparison_data, aes(x = Brightness)) +
+    geom_histogram(aes(fill = Surface_Type), bins = 50, alpha = 0.7, position = "identity") +
+    facet_grid(Timing ~ Processing_Stage, scales = "free") +
+    coord_cartesian(xlim = c(0, quantile(surface_comparison_data$Brightness, 0.99, na.rm = TRUE))) +  # Limit to 99th percentile
+    labs(title = "Distribution of Surface Brightness Across All Conditions",
+         subtitle = "Count of images by brightness value across timing and processing conditions",
+         x = "Brightness Value", y = "Count of Images",
+         fill = "Surface Type") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold"),
+          strip.text = element_text(size = 8)) +
+    scale_fill_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral", "Witness" = "darkgreen"))
+  
+  return(list(distribution = p1, change_by_transform = p2, before_vs_after = p3, 
+              variability = p4, processing_effect = p5, timing_effect = p6, comparison = p7))
+}
+
+#' Create edge brightness plots
+create_edge_brightness_plots <- function(edge_data) {
+  
+  if(is.null(edge_data) || nrow(edge_data) == 0) {
+    cat("No edge data available for plotting.\n")
+    return(NULL)
+  }
+  
+  # Edge brightness by contamination and processing - HISTOGRAM DISTRIBUTION
+  p1 <- ggplot(edge_data, aes(x = Brightness)) +
+    geom_histogram(aes(fill = Edge_Type), bins = 30, alpha = 0.7, position = "identity") +
+    facet_grid(Contamination + Processing ~ Region, scales = "free") +
+    labs(title = "Distribution of Edge Brightness Values by Edge Type",
+         subtitle = "Count of measurements by brightness value across all conditions",
+         x = "Brightness Value", y = "Count of Measurements",
+         fill = "Edge Type") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold"),
+          strip.text = element_text(size = 8)) +
+    scale_fill_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral"))
+  
+  # Contamination effect by edge type - HISTOGRAM DISTRIBUTION
+  edge_contamination_effect <- edge_data %>%
+    pivot_wider(names_from = Contamination, values_from = Brightness) %>%
+    mutate(Contamination_Effect = `After Contamination` - `Before Contamination`)
+  
+  p2 <- ggplot(edge_contamination_effect, aes(x = Contamination_Effect)) +
+    geom_histogram(aes(fill = Edge_Type), bins = 30, alpha = 0.7, position = "identity") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "red", alpha = 0.7, size = 1) +
+    facet_grid(Processing ~ Region, scales = "free") +
+    labs(title = "Distribution of Edge Brightness Changes Due to Contamination",
+         subtitle = "Count of measurements by brightness change (positive = brighter after contamination)",
+         x = "Brightness Change (After - Before Contamination)", y = "Count of Measurements",
+         fill = "Edge Type") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold")) +
+    scale_fill_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral"))
+  
+  # Processing effect by edge type - HISTOGRAM DISTRIBUTION
+  edge_processing_effect <- edge_data %>%
+    pivot_wider(names_from = Processing, values_from = Brightness) %>%
+    mutate(Processing_Effect = `After Processing` - `Before Processing`)
+  
+  p3 <- ggplot(edge_processing_effect, aes(x = Processing_Effect)) +
+    geom_histogram(aes(fill = Edge_Type), bins = 30, alpha = 0.7, position = "identity") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "red", alpha = 0.7, size = 1) +
+    facet_grid(Contamination ~ Region, scales = "free") +
+    labs(title = "Distribution of Edge Brightness Changes Due to Processing",
+         subtitle = "Count of measurements by brightness change (negative = darker after processing/normalization)",
+         x = "Brightness Change (After - Before Processing)", y = "Count of Measurements",
+         fill = "Edge Type") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold")) +
+    scale_fill_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral"))
+  
+  # Edge type comparison across all conditions - HISTOGRAM DISTRIBUTION
+  edge_comparison_data <- edge_data %>%
+    unite("Condition", Contamination, Processing, sep = " - ") %>%
+    mutate(
+      Condition_Short = case_when(
+        Condition == "Before Contamination - Before Processing" ~ "Bef Cont - Bef Proc",
+        Condition == "Before Contamination - After Processing" ~ "Bef Cont - Aft Proc",
+        Condition == "After Contamination - Before Processing" ~ "Aft Cont - Bef Proc",
+        Condition == "After Contamination - After Processing" ~ "Aft Cont - Aft Proc"
+      )
+    )
+  
+  p4 <- ggplot(edge_comparison_data, aes(x = Brightness)) +
+    geom_histogram(aes(fill = Edge_Type), bins = 25, alpha = 0.7, position = "identity") +
+    facet_grid(Condition_Short ~ Region, scales = "free") +
+    labs(title = "Distribution of Edge Brightness: Starshade vs Calibration",
+         subtitle = "Count of measurements by brightness value across all processing conditions",
+         x = "Brightness Value", y = "Count of Measurements",
+         fill = "Edge Type") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 14, face = "bold"),
+          strip.text = element_text(size = 8)) +
+    scale_fill_manual(values = c("Starshade" = "steelblue", "Calibration" = "coral"))
+  
+  return(list(brightness_by_status = p1, contamination_effect = p2, 
+              processing_effect = p3, edge_comparison = p4))
+}
+
+# ========================================================================
+# MAIN BRIGHTNESS ANALYSIS EXECUTION
+# ========================================================================
+
+cat("=== BRIGHTNESS ANALYSIS INITIALIZATION ===\n")
+cat("Analyzing image brightness patterns across surface and edge types...\n")
+cat("Target analyses: Starshade Surface, Calibration Surface, Witness Surface, Starshade Edge, Calibration Edge\n\n")
+
+# Analyze surface brightness data
+all_surface_brightness_data <- analyze_all_surface_brightness()
+
+# Analyze edge brightness data  
+all_edge_brightness_data <- analyze_all_edge_brightness()
+
+# Create visualizations
+if(!is.null(all_surface_brightness_data)) {
+  cat("Creating surface brightness visualizations...\n")
+  surface_brightness_plots <- create_surface_brightness_plots(all_surface_brightness_data)
+  
+  if(!is.null(surface_brightness_plots)) {
+    print(surface_brightness_plots$distribution)
+    print(surface_brightness_plots$change_by_transform)
+    print(surface_brightness_plots$before_vs_after)
+    print(surface_brightness_plots$variability)
+    print(surface_brightness_plots$processing_effect)
+    if(!is.null(surface_brightness_plots$timing_effect)) {
+      print(surface_brightness_plots$timing_effect)
+    }
+    print(surface_brightness_plots$comparison)
+  }
+}
+
+if(!is.null(all_edge_brightness_data)) {
+  cat("Creating edge brightness visualizations...\n")
+  edge_brightness_plots <- create_edge_brightness_plots(all_edge_brightness_data)
+  
+  if(!is.null(edge_brightness_plots)) {
+    print(edge_brightness_plots$brightness_by_status)
+    print(edge_brightness_plots$contamination_effect)
+    print(edge_brightness_plots$processing_effect)
+    print(edge_brightness_plots$edge_comparison)
+  }
+}
+
+# ========================================================================
+# BRIGHTNESS STATISTICS AND SUMMARIES
+# ========================================================================
+
+if(!is.null(all_surface_brightness_data)) {
+  
+  cat("\n=== SURFACE BRIGHTNESS SUMMARY STATISTICS ===\n")
+  
+  surface_brightness_summary <- all_surface_brightness_data %>%
+    group_by(Surface_Type, Timing) %>%
+    summarise(
+      Count = n(),
+      Original_Mean = round(mean(Original_Median_Brightness, na.rm = TRUE), 1),
+      Original_SD = round(sd(Original_Median_Brightness, na.rm = TRUE), 1),
+      PostTransform_Mean = round(mean(Post_Transform_Median_Brightness, na.rm = TRUE), 1),
+      PostTransform_SD = round(sd(Post_Transform_Median_Brightness, na.rm = TRUE), 1),
+      Avg_Change_Percent = round(mean(Brightness_Change_Percent, na.rm = TRUE), 1),
+      .groups = "drop"
+    )
+  
+  print(surface_brightness_summary)
+  
+  # Calculate normalization effectiveness by surface type
+  cat("\n=== SURFACE BRIGHTNESS NORMALIZATION EFFECTIVENESS ===\n")
+  
+  normalization_effectiveness <- all_surface_brightness_data %>%
+    group_by(Surface_Type, Timing) %>%
+    summarise(
+      Original_CV = sd(Original_Median_Brightness, na.rm = TRUE) / 
+                    mean(Original_Median_Brightness, na.rm = TRUE),
+      PostTransform_CV = sd(Post_Transform_Median_Brightness, na.rm = TRUE) / 
+                         mean(Post_Transform_Median_Brightness, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      CV_Improvement_Percent = round((Original_CV - PostTransform_CV) / Original_CV * 100, 1),
+      Original_CV = round(Original_CV, 3),
+      PostTransform_CV = round(PostTransform_CV, 3)
+    )
+  
+  print(normalization_effectiveness)
+}
+
+if(!is.null(all_edge_brightness_data)) {
+  
+  cat("\n=== EDGE BRIGHTNESS SUMMARY STATISTICS ===\n")
+  
+  edge_brightness_summary <- all_edge_brightness_data %>%
+    group_by(Edge_Type, Contamination, Processing, Region) %>%
+    summarise(
+      Count = n(),
+      Mean_Brightness = round(mean(Brightness, na.rm = TRUE), 1),
+      SD_Brightness = round(sd(Brightness, na.rm = TRUE), 1),
+      CV = round(sd(Brightness, na.rm = TRUE) / mean(Brightness, na.rm = TRUE), 3),
+      .groups = "drop"
+    ) %>%
+    arrange(Edge_Type, Region, Contamination, Processing)
+  
+  print(edge_brightness_summary)
+  
+  # Analyze contamination and processing effects by edge type
+  cat("\n=== EDGE BRIGHTNESS CHANGE EFFECTS BY EDGE TYPE ===\n")
+  
+  # Contamination effects
+  contamination_effects <- all_edge_brightness_data %>%
+    group_by(Edge_Type, Trial, Processing, Region) %>%
+    summarise(
+      Before_Contamination = mean(Brightness[Contamination == "Before Contamination"], na.rm = TRUE),
+      After_Contamination = mean(Brightness[Contamination == "After Contamination"], na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(Contamination_Effect = After_Contamination - Before_Contamination) %>%
+    group_by(Edge_Type, Processing, Region) %>%
+    summarise(
+      Mean_Contamination_Effect = round(mean(Contamination_Effect, na.rm = TRUE), 1),
+      SD_Contamination_Effect = round(sd(Contamination_Effect, na.rm = TRUE), 1),
+      .groups = "drop"
+    )
+  
+  cat("Average brightness change due to contamination:\n")
+  print(contamination_effects)
+  
+  # Processing effects
+  processing_effects <- all_edge_brightness_data %>%
+    group_by(Edge_Type, Trial, Contamination, Region) %>%
+    summarise(
+      Before_Processing = mean(Brightness[Processing == "Before Processing"], na.rm = TRUE),
+      After_Processing = mean(Brightness[Processing == "After Processing"], na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(Processing_Effect = After_Processing - Before_Processing) %>%
+    group_by(Edge_Type, Contamination, Region) %>%
+    summarise(
+      Mean_Processing_Effect = round(mean(Processing_Effect, na.rm = TRUE), 1),
+      SD_Processing_Effect = round(sd(Processing_Effect, na.rm = TRUE), 1),
+      .groups = "drop"
+    )
+  
+  cat("\nAverage brightness change due to processing:\n")
+  print(processing_effects)
+  
+  # Direct comparison between Starshade and Calibration edges
+  cat("\n=== STARSHADE vs CALIBRATION EDGE COMPARISON ===\n")
+  
+  edge_comparison <- all_edge_brightness_data %>%
+    group_by(Edge_Type, Contamination, Processing, Region) %>%
+    summarise(Mean_Brightness = mean(Brightness, na.rm = TRUE), .groups = "drop") %>%
+    pivot_wider(names_from = Edge_Type, values_from = Mean_Brightness) %>%
+    mutate(
+      Difference = round(Starshade - Calibration, 1),
+      Percent_Difference = round((Starshade - Calibration) / Calibration * 100, 1)
+    )
+  
+  print(edge_comparison)
+}
+
+# ========================================================================
+# STORE RESULTS FOR INTEGRATION
+# ========================================================================
+
+# Store all brightness analysis results for use in other sections
+brightness_analysis_results <- list(
+  surface_data = all_surface_brightness_data,
+  edge_data = all_edge_brightness_data,
+  surface_summary = if(exists("surface_brightness_summary")) surface_brightness_summary else NULL,
+  edge_summary = if(exists("edge_brightness_summary")) edge_brightness_summary else NULL,
+  normalization_effectiveness = if(exists("normalization_effectiveness")) normalization_effectiveness else NULL,
+  contamination_effects = if(exists("contamination_effects")) contamination_effects else NULL,
+  processing_effects = if(exists("processing_effects")) processing_effects else NULL,
+  edge_comparison = if(exists("edge_comparison")) edge_comparison else NULL,
+  surface_plots = if(exists("surface_brightness_plots")) surface_brightness_plots else NULL,
+  edge_plots = if(exists("edge_brightness_plots")) edge_brightness_plots else NULL
+)
+
+cat("\n=== BRIGHTNESS ANALYSIS COMPLETE ===\n")
+cat("Results stored in 'brightness_analysis_results' list for integration with main analysis.\n")
+if(!is.null(all_surface_brightness_data)) {
+  surface_types <- paste(unique(paste(all_surface_brightness_data$Surface_Type, all_surface_brightness_data$Timing)), collapse = ", ")
+  cat("Surface types analyzed:", surface_types, "\n")
+}
+if(!is.null(all_edge_brightness_data)) {
+  edge_types <- paste(unique(all_edge_brightness_data$Edge_Type), collapse = ", ")
+  cat("Edge types analyzed:", edge_types, "\n")
+}
+cat("\nAvailable result components:\n")
+cat("- surface_data: Combined surface brightness data (Starshade, Calibration, Witness × Before/After)\n")
+cat("- edge_data: Combined edge brightness data (Starshade, Calibration)\n") 
+cat("- surface_summary: Summary statistics for all surface types and timing\n")
+cat("- edge_summary: Summary statistics for all edge types\n")
+cat("- normalization_effectiveness: CV improvement metrics by surface type and timing\n")
+cat("- contamination_effects: Brightness changes due to contamination by edge type\n")
+cat("- processing_effects: Brightness changes due to processing by edge type\n")
+cat("- edge_comparison: Direct Starshade vs Calibration edge comparison\n")
+cat("- surface_plots: Surface visualization plots (distribution, change_by_transform, before_vs_after, variability, processing_effect, timing_effect, comparison)\n")
+cat("- edge_plots: Edge visualization plots (brightness_by_status, contamination_effect, processing_effect, edge_comparison)\n\n")
+```
+
+
 
 ## 8. Error Stats
 
@@ -7856,6 +8667,8 @@ for (i in 1:length(trial_order)) {
         x = expression(log[10](Area)),
         y = "log10(Count)"
       ) +
+      xlim(0, 4) +
+      ylim(-5, 9) +
       compact_theme
     
     surface_cumulative_plots[[i]] <- p_surf_cum
@@ -7918,6 +8731,8 @@ for (i in 1:length(trial_order)) {
         x = expression(log[10](Area)),
         y = "log10(Count)"
       ) +
+      xlim(0, 4) +
+  ylim(-5, 8) +
       compact_theme
     
     surface_binned_plots[[i]] <- p_surf_bin
@@ -8016,6 +8831,8 @@ for (i in 1:length(trial_order)) {
         x = expression(log[10](Area)),
         y = "log10(Count)"
       ) +
+      xlim(0, 4) +
+  ylim(-5, 5) +
       compact_theme
     
     edge_cumulative_plots[[i]] <- p_edge_cum
@@ -8114,6 +8931,8 @@ for (i in 1:length(trial_order)) {
         x = expression(log[10](Area)),
         y = "log10(Count)"
       ) +
+      xlim(0, 4) +
+  ylim(-5, 4) +
       compact_theme
     
     edge_binned_plots[[i]] <- p_edge_bin
@@ -8204,6 +9023,8 @@ tryCatch({
       x = expression(log[10](Area)),
       y = "log10(Count)"
     ) +
+    xlim(0, 4) +
+  ylim(-5, 9) +
     compact_theme
   
   surface_avg_air_cum_plot <- surface_avg_air_cum_plot +
@@ -8211,6 +9032,8 @@ tryCatch({
       x = expression(log[10](Area)),
       y = "log10(Count)"
     ) +
+    xlim(0, 4) +
+  ylim(-5, 9) +
     compact_theme
   
   surface_cumulative_plots[[length(trial_order) + 1]] <- surface_avg_cum_plot
@@ -8301,13 +9124,16 @@ tryCatch({
       x = expression(log[10](Area)),
       y = "log10(Count)"
     ) +
+    xlim(0, 4) +
+  ylim(-5, 8) +
     compact_theme
   
   surface_avg_air_bin_plot <- surface_avg_air_bin_plot +
     labs(
       x = expression(log[10](Area)),
       y = "log10(Count)"
-    ) +
+    ) +xlim(0, 4) +
+  ylim(-5, 8) +
     compact_theme
   
   surface_binned_plots[[length(trial_order) + 1]] <- surface_avg_bin_plot
@@ -8464,6 +9290,8 @@ tryCatch({
       x = expression(log[10](Area)),
       y = "log10(Count)"
     ) +
+    xlim(0, 4) +
+  ylim(-5, 5) +
     compact_theme
   
   edge_avg_air_cum_plot <- edge_avg_air_cum_plot +
@@ -8471,6 +9299,8 @@ tryCatch({
       x = expression(log[10](Area)),
       y = "log10(Count)"
     ) +
+    xlim(0, 4) +
+  ylim(-5, 5) +
     compact_theme
   
   edge_cumulative_plots[[length(trial_order) + 1]] <- edge_avg_cum_plot
@@ -8627,6 +9457,8 @@ tryCatch({
       x = expression(log[10](Area)),
       y = "log10(Count)"
     ) +
+    xlim(0, 4) +
+  ylim(-5, 4) +
     compact_theme
   
   edge_avg_air_bin_plot <- edge_avg_air_bin_plot +
@@ -8634,6 +9466,8 @@ tryCatch({
       x = expression(log[10](Area)),
       y = "log10(Count)"
     ) +
+    xlim(0, 4) +
+  ylim(-5, 4) +
     compact_theme
   
   edge_binned_plots[[length(trial_order) + 1]] <- edge_avg_bin_plot
@@ -12287,8 +13121,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Starshade Surface Analysis: Cumulative Particle Area Distribution over 0.1 square meters",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Starshade Surface Analysis: \n Cumulative Particle Area Distribution over 0.1 square meters",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12321,8 +13155,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Witness Surface Analysis: Cumulative Particle Area Distribution over 0.1 square meters",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Witness Surface Analysis: \n Cumulative Particle Area Distribution over 0.1 square meters",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12355,8 +13189,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Starshade Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Starshade Edge Analysis: \n Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12389,8 +13223,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Calibration Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Calibration Edge Analysis: \n Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12423,8 +13257,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Model Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Model Edge Analysis: \n Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12457,8 +13291,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "SLSM Starshade Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "SLSM Starshade Edge Analysis: \n Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12479,8 +13313,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "SLSM Witness Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "SLSM Calibration Edge Analysis: \n Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12514,8 +13348,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "SLSM Witness Edge Analysis: Cumulative Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "SLSM Witness Edge Analysis: \n Cumulative Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12553,8 +13387,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Starshade Surface Analysis: Binned Particle Area Distribution over 0.1 square meters",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Starshade Surface Analysis: \n Binned Particle Area Distribution over 0.1 square meters",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12587,8 +13421,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Witness Surface Analysis: Binned Particle Area Distribution over 0.1 square meters",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Witness Surface Analysis: \n Binned Particle Area Distribution over 0.1 square meters",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12621,8 +13455,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Starshade Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Starshade Edge Analysis: \n Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12655,8 +13489,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Calibration Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Calibration Edge Analysis: \n Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12689,8 +13523,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "Model Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "Model Edge Analysis: \n Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12723,8 +13557,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "SLSM Starshade Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "SLSM Starshade Edge Analysis: \n Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12745,8 +13579,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "SLSM Witness Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "SLSM Calibration Edge Analysis: \n Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
@@ -12780,8 +13614,8 @@ ggplot() +
   labs(
     x = expression(log[10](Area)~"(square microns)"),
     y = "log10(Particle Count)",
-    title = "SLSM Witness Edge Analysis: Binned Particle Area Distribution over 0.1 meter",
-    subtitle = "Blue: Trial 9, Navy Blue: Trial 10, Green: Trial 11, Orange: Trial 12, Purple: Trial 13, Yellow: Trial 14"
+    title = "SLSM Witness Edge Analysis: \n Binned Particle Area Distribution over 0.1 meter",
+    subtitle = "Blue(Solid): Trial 9, Navy Blue(Dashed): Trial 10, Green(Dotted): Trial 11,\n Orange(Dot-Dash): Trial 12, Purple(LongDash): Trial 13, Yellow(twodash): Trial 14"
   ) +
   custom_theme
 
