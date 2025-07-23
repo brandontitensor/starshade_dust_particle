@@ -13,18 +13,16 @@ run("Close All");
 function safeCloseAllImages() {
     // Get list of all open windows
     window_count = nImages();
+    particles_before_cleanup = nResults;
     
     if (window_count > 0) {
-        window_titles = newArray(window_count);
-        for (w = 1; w <= window_count; w++) {
-            selectImage(w);
-            window_titles[w-1] = getTitle();
-        }
+        // Force close all images using run("Close All")
+        run("Close All");
         
-        // Close each image window specifically
-        for (w = 0; w < window_titles.length; w++) {
-            if (isOpen(window_titles[w])) {
-                selectWindow(window_titles[w]);
+        // Double check and force close any remaining windows
+        if (nImages() > 0) {
+            while (nImages() > 0) {
+                selectImage(1);
                 close();
             }
         }
@@ -32,7 +30,22 @@ function safeCloseAllImages() {
     
     // Verify Results table is still intact
     particles_after_cleanup = nResults;
-    print("        Safe cleanup: " + window_count + " images closed, " + particles_after_cleanup + " particles preserved");
+    
+    if (particles_before_cleanup != particles_after_cleanup) {
+        print("        ERROR: Particle count changed during cleanup! Before: " + particles_before_cleanup + ", After: " + particles_after_cleanup);
+    } else {
+        print("        Safe cleanup: " + window_count + " images closed, " + particles_after_cleanup + " particles preserved");
+    }
+}
+
+function forceCleanImageWindows() {
+    // Aggressive cleanup function to ensure no images remain
+    run("Close All");
+    while (nImages() > 0) {
+        selectImage(1);
+        close();
+    }
+    print("        Force cleanup: All images closed, " + nResults + " particles in results table");
 }
 
 function getTimeStamp() {
@@ -143,6 +156,17 @@ function getEdgeFilename(finishedName) {
     return "Edge" + finishedName;
 }
 
+function validateParticleCountConsistency(expected_start, operation_name) {
+    // Validation function to catch particle count anomalies
+    current_count = nResults;
+    if (current_count < expected_start) {
+        print("        ERROR: Particle count decreased during " + operation_name);
+        print("        Expected >= " + expected_start + ", got " + current_count);
+        return false;
+    }
+    return true;
+}
+
 // ============================================================================
 // PART 1 FUNCTIONS: Optimized File Renaming
 // ============================================================================
@@ -156,9 +180,19 @@ function optimizedProcessFolder(folder_path) {
         old_name = file_list[i];
         if (!endsWith(old_name, "/")) { // Skip directories
             dot_index = lastIndexOf(old_name, ".");
-            if (dot_index != -1 && !endsWith(old_name, "0" + substring(old_name, dot_index))) {
-                new_name = substring(old_name, 0, dot_index) + "0" + substring(old_name, dot_index);
-                rename_operations = Array.concat(rename_operations, old_name + "|" + new_name);
+            if (dot_index != -1) {
+                filename_part = substring(old_name, 0, dot_index);
+                extension_part = substring(old_name, dot_index);
+                
+                if (indexOf(old_name, "caliwaferedge") != -1) {
+                    // Add 1 zero to caliwaferedge files
+                    new_name = filename_part + "0" + extension_part;
+                    rename_operations = Array.concat(rename_operations, old_name + "|" + new_name);
+                } else if (indexOf(old_name, "CWESA") != -1 && indexOf(old_name, "AFT") != -1) {
+                    // Add 2 zeros to CWESA files
+                    new_name = filename_part + "00" + extension_part;
+                    rename_operations = Array.concat(rename_operations, old_name + "|" + new_name);
+                }
             }
         }
     }
@@ -704,6 +738,9 @@ function optimizedProcessImagePairSingle(in_dir_1, in_dir_2, file1_name, file2_n
     
     print("        Processing: " + fullFileName);
     
+    // CRITICAL FIX: Force close all images before starting
+    forceCleanImageWindows();
+    
     // Check if input files exist
     if (!File.exists(in_dir_1 + file1_name) || !File.exists(in_dir_2 + file2_name)) {
         print("        ERROR: Input files not found");
@@ -715,8 +752,9 @@ function optimizedProcessImagePairSingle(in_dir_1, in_dir_2, file1_name, file2_n
     // Load and prepare first image (clean/before)
     print("        Loading image 1: " + file1_name);
     open(in_dir_1 + file1_name);
-    if (nImages() == 0) {
-        print("        ERROR: Failed to open first image");
+    if (nImages() != 1) {
+        print("        ERROR: Expected 1 image after opening first file, have " + nImages());
+        forceCleanImageWindows();
         return false;
     }
     
@@ -731,7 +769,12 @@ function optimizedProcessImagePairSingle(in_dir_1, in_dir_2, file1_name, file2_n
     open(in_dir_2 + file2_name);
     if (nImages() != 2) {
         print("        ERROR: Expected 2 images, have " + nImages());
-        close("*");
+        print("        DEBUG: Current image windows:");
+        for (debug_i = 1; debug_i <= nImages(); debug_i++) {
+            selectImage(debug_i);
+            print("          Image " + debug_i + ": " + getTitle());
+        }
+        forceCleanImageWindows();
         return false;
     }
     
@@ -783,7 +826,7 @@ function optimizedProcessImagePairSingle(in_dir_1, in_dir_2, file1_name, file2_n
             selectImage(w);
             print("          " + w + ": " + getTitle());
         }
-        close("*");
+        forceCleanImageWindows();
         return false;
     }
     
@@ -1095,11 +1138,8 @@ function optimizedProcessImagePair(in_dir_1, in_dir_2, parent_dir) {
         return 0;
     }
     
-    // Setup output directories with timestamp
-    getDateAndTime(year, month, dayOfWeek, dayOfMonth, hour, minute, second, msec);
-    folderName = folder_name_1 + " minus " + folder_name_2 + "_" + 
-                 year + "_" + IJ.pad(month+1, 2) + "_" + IJ.pad(dayOfMonth, 2) + "_" + 
-                 IJ.pad(hour, 2) + "_" + IJ.pad(minute, 2) + "_" + IJ.pad(second, 2);
+    // Setup output directories without timestamp
+    folderName = folder_name_1 + " minus " + folder_name_2;
     out_dir = parent_dir + "Edge Measurements/" + folderName + "/";
     processed_dir = out_dir + "Processed Images/";
     
@@ -1148,6 +1188,25 @@ function optimizedProcessImagePair(in_dir_1, in_dir_2, parent_dir) {
             
         } else {
             print("      FAILED: Could not process this image pair");
+            
+            // CRITICAL FIX: Check if failed processing added spurious particles
+            image_end_particles = nResults;
+            spurious_particles = image_end_particles - image_start_particles;
+            
+            if (spurious_particles > 0) {
+                print("      WARNING: Failed pair added " + spurious_particles + " spurious particles - removing them");
+                
+                // Remove spurious particles from the Results table
+                for (remove_i = 0; remove_i < spurious_particles; remove_i++) {
+                    if (nResults > 0) {
+                        IJ.deleteRows(nResults-1, nResults-1);
+                    }
+                }
+                
+                print("      Cleaned up: Removed " + spurious_particles + " spurious particles");
+                print("      Particle count reset to: " + nResults);
+            }
+            
             logError("Failed to process pair: " + image_files_1[i] + " & " + image_files_2[i], processed_dir);
         }
         
@@ -1425,28 +1484,61 @@ function extractSampleNumber(folder_name) {
 }
 
 function extractSliceNumberFromEdgeFile(filename) {
-    // Use the exact method from the original working script
+    // Handle both filename formats
     edge_match = indexOf(filename, "caliwaferedge");
-    if (edge_match == -1) return -1;
+    aft_match = indexOf(filename, "AFT");
     
-    // Extract number string after "caliwaferedge" (length 13)
-    number_str = substring(filename, edge_match + 13, edge_match + 21);
-    if (lengthOf(number_str) >= 7) {
-        // Take substring starting at position 6 (like original script)
-        slice_str = substring(number_str, 6);
-        slice_num = parseInt(slice_str);
-        if (!isNaN(slice_num)) {
-            return slice_num;
+    if (edge_match != -1) {
+        // Extract number string after "caliwaferedge" (length 13)
+        number_str = substring(filename, edge_match + 13, edge_match + 21);
+        if (lengthOf(number_str) >= 8) {
+            // Take substring starting at position 6, limit to available characters (after sample digit + 4 zeros)
+            end_pos = minOf(lengthOf(number_str), 9);  // Don't exceed string length
+            slice_str = substring(number_str, 6, end_pos);
+            slice_num = parseInt(slice_str);
+            if (!isNaN(slice_num)) {
+                return slice_num;
+            }
         }
+    } else if (aft_match != -1 && indexOf(filename, "CWESA") != -1) {
+        // Handle CWESA format
+        number_str = substring(filename, aft_match + 3, aft_match + 11);
+        if (lengthOf(number_str) >= 8) {
+            // Take substring starting at position 6, limit to available characters (after 4 zeros + 2 added zeros)
+            end_pos = minOf(lengthOf(number_str), 9);  // Don't exceed string length
+            slice_str = substring(number_str, 6, end_pos);
+            slice_num = parseInt(slice_str);
+            if (!isNaN(slice_num)) {
+                return slice_num;
+            }
+        }
+    } else {
+        // Neither format found
+        return -1;
     }
     
     // Debug output to understand what's happening
     print("    Debug: Failed to extract slice number from: " + filename);
-    print("    Debug: edge_match = " + edge_match);
-    print("    Debug: number_str = '" + number_str + "'");
-    if (lengthOf(number_str) >= 7) {
-        slice_str = substring(number_str, 6);
-        print("    Debug: slice_str = '" + slice_str + "'");
+    if (indexOf(filename, "caliwaferedge") != -1) {
+        print("    Debug: edge_match = " + edge_match);
+        print("    Debug: number_str = '" + number_str + "'");
+        if (lengthOf(number_str) >= 8) {
+            end_pos = minOf(lengthOf(number_str), 9);
+            slice_str = substring(number_str, 6, end_pos);
+            print("    Debug: slice_str = '" + slice_str + "'");
+        }
+    } else if (indexOf(filename, "CWESA") != -1) {
+        aft_pos = indexOf(filename, "AFT");
+        print("    Debug: aft_pos = " + aft_pos);
+        if (aft_pos != -1) {
+            number_str = substring(filename, aft_pos + 3, aft_pos + 11);
+            print("    Debug: number_str = '" + number_str + "'");
+            if (lengthOf(number_str) >= 8) {
+                end_pos = minOf(lengthOf(number_str), 9);
+                slice_str = substring(number_str, 6, end_pos);
+                print("    Debug: slice_str = '" + slice_str + "'");
+            }
+        }
     }
     
     return -1;
@@ -1498,12 +1590,29 @@ function getDimensionDifferences(summary_file) {
         
         // Extract slice number using original method
         slice_name = fields[slice_index];
-        edge_match = indexOf(slice_name, "caliwaferedge");
-        if (edge_match == -1) continue;
         
-        number_str = substring(slice_name, edge_match + 13, edge_match + 21);
-        if (lengthOf(number_str) >= 7) {
-            slice_num = parseInt(substring(number_str, 6));  // Original method
+        // Check for both filename formats
+        if (indexOf(slice_name, "caliwaferedge") != -1) {
+            edge_match = indexOf(slice_name, "caliwaferedge");
+            number_str = substring(slice_name, edge_match + 13, edge_match + 21);
+            if (lengthOf(number_str) >= 8) {
+                end_pos = minOf(lengthOf(number_str), 9);  // Don't exceed string length
+                slice_num = parseInt(substring(number_str, 6, end_pos));
+            }
+        } else if (indexOf(slice_name, "CWESA") != -1 && indexOf(slice_name, "AFT") != -1) {
+            aft_pos = indexOf(slice_name, "AFT");
+            if (aft_pos != -1) {
+                number_str = substring(slice_name, aft_pos + 3, aft_pos + 11);
+                if (lengthOf(number_str) >= 8) {
+                    end_pos = minOf(lengthOf(number_str), 9);  // Don't exceed string length
+                    slice_num = parseInt(substring(number_str, 6, end_pos));
+                }
+            }
+        } else {
+            continue; // Skip if neither format is found
+        }
+        
+        if (lengthOf(number_str) >= 8) {
             // Add proper bounds checking
             if (isNaN(slice_num) || slice_num < 0 || slice_num >= differences.length) {
                 print("    Skipping dimension data for invalid slice: " + slice_num + " from " + slice_name);
@@ -1663,6 +1772,8 @@ function qualifyEdgeParticles(comparison_folder, sample_number) {
         slice = parseInt(particle_data[slice_index]);
         
         // Apply dimension differences if available for this slice
+        // Note: slice numbers from images are extracted as integers (061 -> 61)
+        // so they should match CSV slice numbers directly
         if (!isNaN(slice) && slice >= 0 && slice < dimension_diffs.length && dimension_diffs[slice] != "") {
             diffs = split(dimension_diffs[slice], ",");
             if (diffs.length >= 2) {

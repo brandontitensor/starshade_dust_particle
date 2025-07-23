@@ -1,0 +1,4 @@
+model_type,condition,correlation,p_value,n_points
+Observed vs Model,Vacuum,0.9916902712514144,7.880077754920516e-58,65
+Observed vs Model,Air,0.982140948901495,2.0017256855524133e-47,65
+Calibration vs Model,Vacuum,0.9915227821629531,1.4738242746277477e-57,65
